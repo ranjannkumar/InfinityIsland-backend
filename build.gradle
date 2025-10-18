@@ -11,6 +11,10 @@ repositories {
     mavenCentral()
 }
 
+bootJar {
+    archiveFileName = 'application.jar'
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
