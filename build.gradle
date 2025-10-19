@@ -15,6 +15,15 @@ bootJar {
     archiveFileName = 'application.jar'
 }
 
+sourceSets {
+    main {
+        resources {
+            srcDir 'src/main/resources'
+            include 'keystore.p12'
+        }
+    }
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
