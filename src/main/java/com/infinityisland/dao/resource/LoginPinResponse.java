@@ -1,15 +1,15 @@
 package com.infinityisland.dao.resource;
 
 public class LoginPinResponse {
-    String token;
-    AuthUser user;
+    private String token;   // Node returns token == pin
+    private AuthUser user;  // Node-shaped user payload
+
+    public LoginPinResponse() {
+    }
 
     public LoginPinResponse(String token, AuthUser user) {
         this.token = token;
         this.user = user;
-    }
-
-    public LoginPinResponse() {
     }
 
     public String getToken() {
