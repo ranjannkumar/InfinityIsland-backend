@@ -36,7 +36,6 @@ bin/
 /.nb-gradle/
 
 ### VS Code ###
-.vscode/
 
 ### Mac OS ###
 .DS_Store
@@ -54,7 +53,6 @@ bin/
 Thumbs.db
 
 # Environment and secrets
-.env
 
 # Temporary/backup files
 *.tmp
@@ -72,3 +70,10 @@ hs_err_pid*
 *.jar
 *.war
 *.ear
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+config.bat
+node_modules

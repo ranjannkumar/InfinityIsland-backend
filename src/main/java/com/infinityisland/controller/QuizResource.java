@@ -1,6 +1,5 @@
 package com.infinityisland.controller;
 
-
 import com.infinityisland.service.QuizService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.*;
@@ -21,39 +20,81 @@ public class QuizResource {
         this.quizService = quizService;
     }
 
-    @POST @Path("/prepare")
+    /**
+     * POST /api/v1/quiz/prepare
+     * Request: { level, beltOrDegree, operation }
+     * Response: { quizRunId, practice: QuestionDto[] }
+     */
+    @POST
+    @Path("/prepare")
     public Response prepare(@Context HttpServletRequest req, QuizDtos.PrepareRequest body) {
         String userId = (String) req.getAttribute("userId");
-        return Response.ok(quizService.prepare(userId, body)).build();
+        var resp = quizService.prepare(userId, body);
+        return Response.ok(resp).build();
     }
 
-    @POST @Path("/start")
+    /**
+     * POST /api/v1/quiz/start
+     * Request: { quizRunId }
+     * Response: { quizRunId, questions: QuestionDto[] } // full prefetch (Node parity)
+     */
+    @POST
+    @Path("/start")
     public Response start(@Context HttpServletRequest req, QuizDtos.StartRequest body) {
         String userId = (String) req.getAttribute("userId");
-        return Response.ok(quizService.start(userId, body)).build();
+        var resp = quizService.start(userId, body);
+        return Response.ok(resp).build();
     }
 
-    @POST @Path("/answer")
+    /**
+     * POST /api/v1/quiz/answer
+     * Request: { quizRunId, questionId, answer, responseMs, level, beltOrDegree }
+     * Response: AnswerOrPracticeResponse
+     */
+    @POST
+    @Path("/answer")
     public Response answer(@Context HttpServletRequest req, QuizDtos.AnswerRequest body) {
         String userId = (String) req.getAttribute("userId");
-        return Response.ok(quizService.answer(userId, body)).build();
+        var resp = quizService.answer(userId, body);
+        return Response.ok(resp).build();
     }
 
-    @POST @Path("/inactivity")
+    /**
+     * POST /api/v1/quiz/inactivity
+     * Request: { quizRunId, questionId }
+     * Response: AnswerOrPracticeResponse
+     */
+    @POST
+    @Path("/inactivity")
     public Response inactivity(@Context HttpServletRequest req, QuizDtos.InactivityRequest body) {
         String userId = (String) req.getAttribute("userId");
-        return Response.ok(quizService.inactivity(userId, body)).build();
+        var resp = quizService.inactivity(userId, body);
+        return Response.ok(resp).build();
     }
 
-    @POST @Path("/practice/answer")
+    /**
+     * POST /api/v1/quiz/practice/answer
+     * Request: { quizRunId, questionId, answer }
+     * Response: AnswerOrPracticeResponse
+     */
+    @POST
+    @Path("/practice/answer")
     public Response practiceAnswer(@Context HttpServletRequest req, QuizDtos.PracticeAnswerRequest body) {
         String userId = (String) req.getAttribute("userId");
-        return Response.ok(quizService.practiceAnswer(userId, body)).build();
+        var resp = quizService.practiceAnswer(userId, body);
+        return Response.ok(resp).build();
     }
 
-    @POST @Path("/complete")
+    /**
+     * POST /api/v1/quiz/complete
+     * Request: { quizRunId }
+     * Response: { completed: true, totalCorrect, dailyStats? } or 200 OK depending on service
+     */
+    @POST
+    @Path("/complete")
     public Response complete(@Context HttpServletRequest req, QuizDtos.CompleteRequest body) {
         String userId = (String) req.getAttribute("userId");
-        return Response.ok(quizService.complete(userId, body)).build();
+        var resp = quizService.complete(userId, body);
+        return Response.ok(resp).build();
     }
 }
