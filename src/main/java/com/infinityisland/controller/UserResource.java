@@ -20,17 +20,21 @@ public class UserResource {
     @Autowired
     UserService userService;
 
-    /** GET /api/v1/user/daily */
+    /**
+     * GET /api/v1/user/daily -> { correctCount, totalActiveMs, grandTotalCorrect }
+     */
     @GET
     @Path("/daily")
     public Response getDaily(@Context HttpServletRequest req) {
-        String userId = (String) req.getAttribute("userId"); // set by PinAuthFilter
+        String userId = (String) req.getAttribute("userId");
         var view = userService.getDaily(userId);
         return Response.ok(new DailyResponse(view.correctCountToday, view.totalActiveMsToday, view.grandTotalCorrect))
                 .build();
     }
 
-    /** GET /api/v1/user/progress */
+    /**
+     * GET /api/v1/user/progress -> { progress: { "L1": {...}, ... } }
+     */
     @GET
     @Path("/progress")
     public Response getProgress(@Context HttpServletRequest req) {
@@ -39,17 +43,50 @@ public class UserResource {
         return Response.ok(new ProgressResponse(progress)).build();
     }
 
-    /** POST /api/v1/user/reset */
+    /**
+     * POST /api/v1/user/reset -> 200 OK
+     */
     @POST
     @Path("/reset")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response reset(@Context HttpServletRequest req) {
         String userId = (String) req.getAttribute("userId");
         userService.resetUser(userId);
-        return Response.ok().build(); // Node returns 200; change to 204 if you prefer
+        return Response.ok().build();
     }
 
-    // --- DTOs for responses ---
-    public static record DailyResponse(long correctCount, long totalActiveMs, long grandTotalCorrect) {}
-    public static record ProgressResponse(Map<String, ProgressState> progress) {}
+    /**
+     * POST /api/v1/user/theme -> { success: true, theme } (first-set only)
+     */
+    @POST
+    @Path("/theme")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response updateTheme(@Context HttpServletRequest req, ThemeRequest body) {
+        String userId = (String) req.getAttribute("userId");
+        if (body == null || body.themeKey == null || body.themeKey.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Theme key required")).build();
+        }
+        try {
+            String theme = userService.setThemeFirstTime(userId, body.themeKey);
+            return Response.ok(Map.of("success", true, "theme", theme)).build();
+        } catch (IllegalStateException ise) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Theme already set")).build();
+        } catch (IllegalArgumentException iae) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", iae.getMessage())).build();
+        }
+    }
+
+    // --- DTOs for responses/requests ---
+    public static record DailyResponse(long correctCount, long totalActiveMs, long grandTotalCorrect) {
+    }
+
+    public static record ProgressResponse(Map<String, ProgressState> progress) {
+    }
+
+    public static class ThemeRequest {
+        public String themeKey;
+    }
 }

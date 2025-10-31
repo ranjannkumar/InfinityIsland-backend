@@ -10,64 +10,50 @@ import java.util.Map;
 public class User {
     @Id
     private String id;
+
     private String name;
     private String pin;
+
+    /** First-time selectable, then locked unless explicitly reset. */
     private String theme;
 
-    private Map<String, ProgressState> progress;
-    private Map<String, DailyStats> dailyStats;
+    /** Node keeps per-level progress in a Map keyed like "L1", "L2", ... */
+    private Map<String, ProgressState> progress = new HashMap<>();
 
-    public User() {
-        theme = "animals";
-        progress = new HashMap<>();
-        dailyStats = new HashMap<>();
-    }
+    /** Node stores per-day stats keyed by YYYY-MM-DD. */
+    private Map<String, DailyStats> dailyStats = new HashMap<>();
 
-    public String getId() {
-        return id;
-    }
+    /** New: keep login streak in days (Pacific time). */
+    private Integer currentStreak = 0;
 
-    public void setId(String id) {
-        this.id = id;
-    }
+    /** New: last login date in YYYY-MM-DD (Pacific time). */
+    private String lastLoginDate;
 
-    public String getName() {
-        return name;
-    }
+    public User() {}
 
-    public void setName(String name) {
-        this.name = name;
-    }
+    // --- Getters / Setters ---
 
-    public String getPin() {
-        return pin;
-    }
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
 
-    public void setPin(String pin) {
-        this.pin = pin;
-    }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 
-    public String getTheme() {
-        return theme;
-    }
+    public String getPin() { return pin; }
+    public void setPin(String pin) { this.pin = pin; }
 
-    public void setTheme(String theme) {
-        this.theme = theme;
-    }
+    public String getTheme() { return theme; }
+    public void setTheme(String theme) { this.theme = theme; }
 
-    public Map<String, ProgressState> getProgress() {
-        return progress;
-    }
+    public Map<String, ProgressState> getProgress() { return progress; }
+    public void setProgress(Map<String, ProgressState> progress) { this.progress = progress; }
 
-    public void setProgress(Map<String, ProgressState> progress) {
-        this.progress = progress;
-    }
+    public Map<String, DailyStats> getDailyStats() { return dailyStats; }
+    public void setDailyStats(Map<String, DailyStats> dailyStats) { this.dailyStats = dailyStats; }
 
-    public Map<String, DailyStats> getDailyStats() {
-        return dailyStats;
-    }
+    public Integer getCurrentStreak() { return currentStreak; }
+    public void setCurrentStreak(Integer currentStreak) { this.currentStreak = currentStreak; }
 
-    public void setDailyStats(Map<String, DailyStats> dailyStats) {
-        this.dailyStats = dailyStats;
-    }
+    public String getLastLoginDate() { return lastLoginDate; }
+    public void setLastLoginDate(String lastLoginDate) { this.lastLoginDate = lastLoginDate; }
 }

@@ -19,9 +19,13 @@ sourceSets {
     main {
         resources {
             srcDir 'src/main/resources'
-            include 'keystore.p12'
+            include '**/*'
         }
     }
+}
+
+tasks.processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 java {

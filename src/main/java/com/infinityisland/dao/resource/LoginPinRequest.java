@@ -1,15 +1,10 @@
 package com.infinityisland.dao.resource;
 
 public class LoginPinRequest {
-    String pin;
-    String name;
+    private String pin;
+    private String name; // required for new signup, optional for existing login
 
     public LoginPinRequest() {
-    }
-
-    public LoginPinRequest(String pin, String name) {
-        this.pin = pin;
-        this.name = name;
     }
 
     public String getPin() {
