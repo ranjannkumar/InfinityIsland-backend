@@ -5,13 +5,16 @@ import com.infinityisland.dao.resource.LoginPinRequest;
 import com.infinityisland.dao.resource.LoginPinResponse;
 import com.infinityisland.dao.user.BeltStatus;
 import com.infinityisland.dao.user.BlackProgress;
+import com.infinityisland.dao.user.DailyStats;
 import com.infinityisland.dao.user.ProgressState;
 import com.infinityisland.dao.user.User;
 import com.infinityisland.repositories.UserRepository;
+import com.infinityisland.service.UserService;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.*;
 
@@ -22,62 +25,82 @@ import java.util.*;
 public class AuthResource {
 
     private final UserRepository userRepository;
+    private final UserService userService;
 
-    public AuthResource(UserRepository userRepository) {
+    public AuthResource(UserRepository userRepository, UserService userService) {
         this.userRepository = userRepository;
+        this.userService = userService;
     }
 
     /**
      * POST /api/v1/auth/login-pin
+     * Request: { pin, name? }
+     * Response: { token, user }
+     * user includes: theme, progress, dailyStats(today), grandTotal, currentStreak, lastLoginDate
      */
     @POST
     @Path("/login-pin")
     public Response loginPin(LoginPinRequest body) {
-        // ---- validate
-        if (body == null || body.getPin() == null || body.getPin().isBlank()) {
-            return badRequest("pin is required");
+        if (body == null || !StringUtils.hasText(body.getPin())) {
+            return badRequest("PIN required");
         }
-        String pin = body.getPin().trim();
-        String name = (body.getPin() != null && !body.getPin().isBlank()) ? body.getPin().trim() : "Player";
+        final String pin = body.getPin().trim();
+        final String inputName = StringUtils.hasText(body.getName()) ? body.getName().trim() : null;
 
-        // ---- find or create user by PIN
-        User user = userRepository.findByPin(pin).map(u -> {
-            // Optional: update name on first login only
-            if ((u.getName() == null || u.getName().isBlank()) && name != null && !name.isBlank()) {
-                u.setName(name);
-                userRepository.save(u);
+        Optional<User> existing = userRepository.findByPin(pin);
+        User user;
+        if (existing.isPresent()) {
+            user = existing.get();
+            if (StringUtils.hasText(inputName)
+                    && StringUtils.hasText(user.getName())
+                    && !user.getName().equalsIgnoreCase(inputName)) {
+                Map<String, Object> err = Map.of(
+                        "error", Map.of(
+                                "message", "Pin already exists, please enter correct name.",
+                                "code", "INCORRECT_NAME"
+                        )
+                );
+                return Response.status(Response.Status.UNAUTHORIZED).entity(err).build();
             }
-            return u;
-        }).orElseGet(() -> {
-            User u = new User();
-            u.setPin(pin);
-            u.setName(name);
-            u.setTheme("animals");
-
-            // default L1 progress with white unlocked
+            if (!StringUtils.hasText(user.getName()) && StringUtils.hasText(inputName)) {
+                user.setName(inputName);
+                userRepository.save(user);
+            }
+        } else {
+            if (!StringUtils.hasText(inputName)) {
+                return badRequest("Name required for new user signup.");
+            }
+            user = new User();
+            user.setPin(pin);
+            user.setName(inputName);
             Map<String, ProgressState> progress = new HashMap<>();
             progress.put("L1", defaultL1Progress());
-            u.setProgress(progress);
+            user.setProgress(progress);
+            user.setDailyStats(new HashMap<>());
+            user = userRepository.save(user);
+        }
 
-            // empty daily stats map
-            u.setDailyStats(new HashMap<>());
+        // Update streak + lastLoginDate in Pacific time
+        int newStreak = userService.updateLoginStreakPacific(user);
 
-            return userRepository.save(u);
-        });
+        // Today's summary + grand total
+        var view = userService.getDaily(user.getId());
+        DailyStats today = new DailyStats();
+        today.setCorrectCount(view.correctCountToday);
+        today.setTotalActiveMs(view.totalActiveMsToday);
 
-        // ---- build response { token, user: { id, name, progress, dailyStats } }
-        AuthUser userDto = new AuthUser(
+        AuthUser dto = new AuthUser(
                 user.getId(),
                 user.getName(),
+                user.getTheme(),
                 user.getProgress() != null ? user.getProgress() : Map.of(),
-                user.getDailyStats() != null ? user.getDailyStats() : Map.of()
+                today,
+                view.grandTotalCorrect,
+                newStreak,
+                user.getLastLoginDate()
         );
-        LoginPinResponse resp = new LoginPinResponse(user.getPin(), userDto);
-
-        return Response.ok(resp).build();
+        return Response.ok(new LoginPinResponse(user.getPin(), dto)).build();
     }
-
-    // ---------------- helpers ----------------
 
     private ProgressState defaultL1Progress() {
         ProgressState p = new ProgressState();
@@ -88,8 +111,7 @@ public class AuthResource {
         BeltStatus white = new BeltStatus();
         white.setUnlocked(true);
         p.setWhite(white);
-
-        p.setYellow(new BeltStatus()); // locked
+        p.setYellow(new BeltStatus());
         p.setGreen(new BeltStatus());
         p.setBlue(new BeltStatus());
         p.setRed(new BeltStatus());
@@ -99,12 +121,10 @@ public class AuthResource {
         bp.setUnlocked(false);
         bp.setCompletedDegrees(new ArrayList<>());
         p.setBlack(bp);
-
         return p;
     }
 
     private Response badRequest(String message) {
-        // matches frontend error handling: data.error?.message
         Map<String, Object> err = Map.of("error", Map.of("message", message));
         return Response.status(Response.Status.BAD_REQUEST).entity(err).build();
     }

@@ -14,10 +14,8 @@ import com.infinityisland.repositories.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 public class QuizService {
@@ -45,7 +43,7 @@ public class QuizService {
         String beltOrDegree = req.beltOrDegree();
 
         // Load a bank for (op, level, beltOrDegree)
-        List<GeneratedQuestion> bank =
+        java.util.List<GeneratedQuestion> bank =
                 gqRepo.findByOperationAndLevelAndBeltOrDegree(op, level, beltOrDegree);
         if (bank.isEmpty()) {
             bank = synthesizeQuestions(op, level, beltOrDegree, 10);
@@ -59,16 +57,30 @@ public class QuizService {
         run.setLevel(level);
         run.setBeltOrDegree(beltOrDegree);
         run.setStatus("prepared");
-        run.setCreatedAt(Instant.now());
-        run.setItemIds(bank.stream().map(GeneratedQuestion::getId).collect(Collectors.toList()));
+        run.setCreatedAt(java.time.Instant.now());
+        run.setItemIds(bank.stream().map(GeneratedQuestion::getId).collect(java.util.stream.Collectors.toList()));
         run.setCurrentIndex(0);
         run.setCorrect(0);
         run.setWrong(0);
         run.setTotalActiveMs(0L);
         quizRunRepo.save(run);
 
-        // practice list (empty for now)
-        return new QuizDtos.PrepareResponse(run.getId(), List.of());
+        // practice list (prefetched) — mirror Node's 'practice' array semantics
+        java.util.List<QuizDtos.QuestionDto> practice = new java.util.ArrayList<>();
+        if ("1".equals(level) && beltOrDegree != null && beltOrDegree.equalsIgnoreCase("white")) {
+            // L1 white: practice 0+0 once
+            GeneratedQuestion q = makeSyntheticQuestion(op, level, beltOrDegree, 0, 0, "0 + 0");
+            practice.add(toDto(q));
+        } else if (!bank.isEmpty()) {
+            // Use first canonical question from bank; if non-identical, also add reversed
+            GeneratedQuestion first = bank.get(0);
+            practice.add(toDto(first));
+            if (first.getA() != null && first.getB() != null && !first.getA().equals(first.getB())) {
+                GeneratedQuestion reversed = makeSyntheticQuestion(op, level, beltOrDegree, first.getB(), first.getA(), null);
+                practice.add(toDto(reversed));
+            }
+        }
+        return new QuizDtos.PrepareResponse(run.getId(), practice);
     }
 
     // ---------------------- START ----------------------
@@ -80,12 +92,167 @@ public class QuizService {
             run.setStatus("in-progress");
             quizRunRepo.save(run);
         }
-        QuizDtos.QuestionDto q = mapQuestion(run, run.getCurrentIndex());
-        return new QuizDtos.StartResponse(q);
+        // Return the full prefetched list of questions for this run (parity with Node)
+        java.util.List<QuizDtos.QuestionDto> questions = run.getItemIds().stream()
+                .map(this::getQuestionById)
+                .map(this::toDto)
+                .collect(java.util.stream.Collectors.toList());
+        return new QuizDtos.StartResponse(run.getId(), questions);
     }
 
-    // ---------------------- ANSWER ----------------------
+    // ---------------------- ANSWER / PRACTICE / INACTIVITY ----------------------
+    // (unchanged code below)
 
+    // ... existing answer(), inactivity(), practiceAnswer(), complete() etc.
+
+    // ---------------------- helpers ----------------------
+
+    private QuizRun guardRunOwnedByUser(String runId, String userId) {
+        return quizRunRepo.findById(runId)
+                .filter(r -> java.util.Objects.equals(r.getUserId(), userId))
+                .orElseThrow(() -> new java.util.NoSuchElementException("QuizRun not found"));
+    }
+
+    private void ensureActive(QuizRun run) {
+        if (!"prepared".equals(run.getStatus()) && !"in-progress".equals(run.getStatus())) {
+            throw new IllegalStateException("QuizRun is not active");
+        }
+        if (!"in-progress".equals(run.getStatus())) {
+            throw new IllegalStateException("QuizRun not started");
+        }
+    }
+
+    private String getCurrentQuestionId(QuizRun run) {
+        return run.getItemIds().get(run.getCurrentIndex());
+    }
+
+    private GeneratedQuestion getQuestionById(String id) {
+        return gqRepo.findById(id).orElseThrow(() -> new java.util.NoSuchElementException("Question not found"));
+    }
+
+    private QuizDtos.QuestionDto mapQuestion(QuizRun run, int index) {
+        String qid = run.getItemIds().get(index);
+        return toDto(getQuestionById(qid));
+    }
+
+    private QuizDtos.QuestionDto toDto(GeneratedQuestion gq) {
+        return new QuizDtos.QuestionDto(
+                gq.getId(),
+                gq.getOperation(),
+                gq.getLevel(),
+                gq.getBeltOrDegree(),
+                gq.getA(),
+                gq.getB(),
+                gq.getQuestion(),
+                gq.getCorrectAnswer(),
+                gq.getChoices() // List<Integer>
+        );
+    }
+
+    /**
+     * Build an in-memory GeneratedQuestion without saving (for practice prefetch).
+     */
+    private GeneratedQuestion makeSyntheticQuestion(String op, String level, String beltOrDegree, int a, int b, String questionOverride) {
+        GeneratedQuestion gq = new GeneratedQuestion();
+        gq.setOperation(op);
+        gq.setLevel(level);
+        gq.setBeltOrDegree(beltOrDegree);
+        gq.setA(a);
+        gq.setB(b);
+        String text = questionOverride != null ? questionOverride : (a + " + " + b);
+        gq.setQuestion(text);
+        Integer ans = a + b; // current backend only supports addition
+        gq.setCorrectAnswer(ans);
+        gq.setChoices(java.util.List.of(ans, ans + 1, ans - 1, ans + 2));
+        gq.setSource("current");
+        return gq;
+    }
+    private QuizDtos.DailyStatsDto addToDaily(String userId, long addCorrect, long addMs) {
+        User u = userRepo.findById(userId).orElseThrow();
+        String today = LocalDate.now().toString();
+
+        Map<String, DailyStats> map = u.getDailyStats();
+        if (map == null) {
+            map = new HashMap<>();
+            u.setDailyStats(map);
+        }
+
+        DailyStats ds = map.get(today);
+        if (ds == null) {
+            ds = new DailyStats();
+            ds.setDate(today);
+            ds.setCorrectCount(0L);
+            ds.setTotalActiveMs(0L);
+            map.put(today, ds);
+        }
+        ds.setCorrectCount(ds.getCorrectCount() + addCorrect);
+        ds.setTotalActiveMs(ds.getTotalActiveMs() + addMs);
+        userRepo.save(u);
+
+        // Keep daily_summaries in sync (as your Node did)
+        DailySummary sum = dailySummaryRepo.findByUserIdAndDate(userId, today).orElseGet(() -> {
+            DailySummary d = new DailySummary();
+            d.setUserId(userId);
+            d.setDate(today);
+            d.setCorrectCount(0L);
+            d.setTotalActiveMs(0L);
+            d.setReportSentMarker(false);
+            return d;
+        });
+        sum.setCorrectCount(sum.getCorrectCount() + addCorrect);
+        sum.setTotalActiveMs(sum.getTotalActiveMs() + addMs);
+        dailySummaryRepo.save(sum);
+
+        long grand = dailySummaryRepo.findByUserId(userId).stream()
+                .mapToLong(DailySummary::getCorrectCount).sum();
+
+        return new QuizDtos.DailyStatsDto(ds.getCorrectCount(), ds.getTotalActiveMs(), grand);
+    }
+
+    private List<GeneratedQuestion> synthesizeQuestions(String op, String level, String belt, int n) {
+        Random r = new Random();
+        List<GeneratedQuestion> out = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            int a = r.nextInt(10) + 1, b = r.nextInt(10) + 1;
+            int ans;
+            String text;
+            int aa = a, bb = b;
+
+            switch (op) {
+                case "sub":
+                    ans = a - b;
+                    text = a + " - " + b + " = ?";
+                    break;
+                case "mul":
+                    ans = a * b;
+                    text = a + " × " + b + " = ?";
+                    break;
+                case "div":
+                    ans = (b == 0 ? 0 : a);
+                    text = (a * b) + " ÷ " + b + " = ?";
+                    aa = a * b;
+                    bb = b;
+                    break;
+                default:
+                    ans = a + b;
+                    text = a + " + " + b + " = ?";
+                    break;
+            }
+
+            GeneratedQuestion gq = new GeneratedQuestion();
+            gq.setOperation(op);
+            gq.setLevel(level);
+            gq.setBeltOrDegree(belt);
+            gq.setA(aa);
+            gq.setB(bb);
+            gq.setQuestion(text);
+            gq.setCorrectAnswer(ans);
+            gq.setChoices(java.util.List.of(ans, ans + 1, ans - 1, ans + 2));
+            gq.setSource("current");
+            out.add(gq);
+        }
+        return out;
+    }
     public QuizDtos.AnswerOrPracticeResponse answer(String userId, QuizDtos.AnswerRequest req) {
         QuizRun run = guardRunOwnedByUser(req.quizRunId(), userId);
         ensureActive(run);
@@ -209,140 +376,5 @@ public class QuizService {
         QuizDtos.DailyStatsDto daily = addToDaily(userId, 0, 0);
         return new QuizDtos.AnswerOrPracticeResponse(true, null, null, null,
                 run.getCorrect(), daily);
-    }
-
-    // ---------------------- helpers ----------------------
-
-    private QuizRun guardRunOwnedByUser(String runId, String userId) {
-        return quizRunRepo.findById(runId)
-                .filter(r -> Objects.equals(r.getUserId(), userId))
-                .orElseThrow(() -> new NoSuchElementException("QuizRun not found"));
-    }
-
-    private void ensureActive(QuizRun run) {
-        if (!"prepared".equals(run.getStatus()) && !"in-progress".equals(run.getStatus())) {
-            throw new IllegalStateException("QuizRun is not active");
-        }
-        if (!"in-progress".equals(run.getStatus())) {
-            run.setStatus("in-progress");
-            quizRunRepo.save(run);
-        }
-    }
-
-    private String getCurrentQuestionId(QuizRun run) {
-        List<String> ids = run.getItemIds();
-        if (ids == null || ids.isEmpty()) throw new IllegalStateException("Run has no items");
-        int idx = Math.min(Math.max(run.getCurrentIndex(), 0), ids.size() - 1);
-        return ids.get(idx);
-    }
-
-    private GeneratedQuestion getQuestionById(String id) {
-        return gqRepo.findById(id).orElseThrow(() -> new NoSuchElementException("Question not found"));
-    }
-
-    private QuizDtos.QuestionDto mapQuestion(QuizRun run, int index) {
-        String qid = run.getItemIds().get(index);
-        return toDto(getQuestionById(qid));
-    }
-
-    private QuizDtos.QuestionDto toDto(GeneratedQuestion gq) {
-        return new QuizDtos.QuestionDto(
-                gq.getId(),
-                gq.getOperation(),
-                gq.getLevel(),
-                gq.getBeltOrDegree(),
-                gq.getA(),
-                gq.getB(),
-                gq.getQuestion(),
-                gq.getCorrectAnswer(),
-                gq.getChoices() // List<Integer>
-        );
-    }
-
-    private QuizDtos.DailyStatsDto addToDaily(String userId, long addCorrect, long addMs) {
-        User u = userRepo.findById(userId).orElseThrow();
-        String today = LocalDate.now().toString();
-
-        Map<String, DailyStats> map = u.getDailyStats();
-        if (map == null) {
-            map = new HashMap<>();
-            u.setDailyStats(map);
-        }
-
-        DailyStats ds = map.get(today);
-        if (ds == null) {
-            ds = new DailyStats();
-            ds.setDate(today);
-            ds.setCorrectCount(0L);
-            ds.setTotalActiveMs(0L);
-            map.put(today, ds);
-        }
-        ds.setCorrectCount(ds.getCorrectCount() + addCorrect);
-        ds.setTotalActiveMs(ds.getTotalActiveMs() + addMs);
-        userRepo.save(u);
-
-        // Keep daily_summaries in sync (as your Node did)
-        DailySummary sum = dailySummaryRepo.findByUserIdAndDate(userId, today).orElseGet(() -> {
-            DailySummary d = new DailySummary();
-            d.setUserId(userId);
-            d.setDate(today);
-            d.setCorrectCount(0L);
-            d.setTotalActiveMs(0L);
-            d.setReportSentMarker(false);
-            return d;
-        });
-        sum.setCorrectCount(sum.getCorrectCount() + addCorrect);
-        sum.setTotalActiveMs(sum.getTotalActiveMs() + addMs);
-        dailySummaryRepo.save(sum);
-
-        long grand = dailySummaryRepo.findByUserId(userId).stream()
-                .mapToLong(DailySummary::getCorrectCount).sum();
-
-        return new QuizDtos.DailyStatsDto(ds.getCorrectCount(), ds.getTotalActiveMs(), grand);
-    }
-
-    private List<GeneratedQuestion> synthesizeQuestions(String op, String level, String belt, int n) {
-        Random r = new Random();
-        List<GeneratedQuestion> out = new ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            int a = r.nextInt(10) + 1, b = r.nextInt(10) + 1;
-            int ans;
-            String text;
-            int aa = a, bb = b;
-
-            switch (op) {
-                case "sub":
-                    ans = a - b;
-                    text = a + " - " + b + " = ?";
-                    break;
-                case "mul":
-                    ans = a * b;
-                    text = a + " × " + b + " = ?";
-                    break;
-                case "div":
-                    ans = (b == 0 ? 0 : a);
-                    text = (a * b) + " ÷ " + b + " = ?";
-                    aa = a * b;
-                    bb = b;
-                    break;
-                default:
-                    ans = a + b;
-                    text = a + " + " + b + " = ?";
-                    break;
-            }
-
-            GeneratedQuestion gq = new GeneratedQuestion();
-            gq.setOperation(op);
-            gq.setLevel(level);
-            gq.setBeltOrDegree(belt);
-            gq.setA(aa);
-            gq.setB(bb);
-            gq.setQuestion(text);
-            gq.setCorrectAnswer(ans);
-            gq.setChoices(java.util.List.of(ans, ans + 1, ans - 1, ans + 2));
-            gq.setSource("current");
-            out.add(gq);
-        }
-        return out;
     }
 }
