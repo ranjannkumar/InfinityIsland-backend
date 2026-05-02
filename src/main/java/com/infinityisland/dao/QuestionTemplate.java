@@ -9,10 +9,12 @@ public class QuestionTemplate {
     private String id;
     private String operation;
     private String level;
-    private String belt;
+    private String beltOrDegree;
     private Integer a;
     private Integer b;
-    private String factType;
+    private String factType; // identical | non-identical
+    private Boolean isIdenticalPair;
+    private Object metadata;
 
     public String getId() {
         return id;
@@ -38,12 +40,12 @@ public class QuestionTemplate {
         this.level = level;
     }
 
-    public String getBelt() {
-        return belt;
+    public String getBeltOrDegree() {
+        return beltOrDegree;
     }
 
-    public void setBelt(String belt) {
-        this.belt = belt;
+    public void setBeltOrDegree(String beltOrDegree) {
+        this.beltOrDegree = beltOrDegree;
     }
 
     public Integer getA() {
@@ -68,5 +70,21 @@ public class QuestionTemplate {
 
     public void setFactType(String factType) {
         this.factType = factType;
+    }
+
+    public Boolean getIsIdenticalPair() {
+        return isIdenticalPair;
+    }
+
+    public void setIsIdenticalPair(Boolean isIdenticalPair) {
+        this.isIdenticalPair = isIdenticalPair;
+    }
+
+    public Object getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(Object metadata) {
+        this.metadata = metadata;
     }
 }

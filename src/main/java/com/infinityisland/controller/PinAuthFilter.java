@@ -2,65 +2,95 @@ package com.infinityisland.controller;
 
 import com.infinityisland.dao.user.User;
 import com.infinityisland.repositories.UserRepository;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
+import com.infinityisland.service.GameConfigService;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import jakarta.ws.rs.container.ContainerRequestFilter;
+import jakarta.ws.rs.container.PreMatching;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.Provider;
+
+import com.infinityisland.util.ErrorResponse;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.Set;
 
-@Component
-public class PinAuthFilter extends OncePerRequestFilter {
+@Provider
+@PreMatching
+public class PinAuthFilter implements ContainerRequestFilter {
 
-    private final UserRepository userRepository;
+  private static final Logger log = LoggerFactory.getLogger(PinAuthFilter.class);
 
-    // Change to "/api/v1" if that's your prefix (or override in application.yml)
-    @Value("${app.api-prefix:/api}")
-    private String apiPrefix;
+  @Inject
+  private UserRepository userRepository;
 
-    public PinAuthFilter(UserRepository userRepository) {
-        this.userRepository = userRepository;
+  @Inject
+  private GameConfigService gameConfigService;
+
+  // Routes that require any authenticated user
+  private static final String[] PROTECTED_PREFIXES = new String[]{
+          "/api/quiz", "/api/user", "/api/analytics", "/api/config"
+  };
+
+  // Routes that require ADMIN access only
+  private static final Set<String> ADMIN_ONLY_PREFIXES = Set.of(
+          "/config",
+          "/admin",
+          "/api/config",
+          "/api/admin"
+  );
+
+  @Override
+  public void filter(ContainerRequestContext ctx) throws IOException {
+    String path = "/" + ctx.getUriInfo().getPath();
+    log.debug("[DEBUG] Filter path: {}", path);
+    String pin = ctx.getHeaderString("x-pin");
+
+    // Check if admin-only route
+    boolean isAdminRoute = ADMIN_ONLY_PREFIXES.stream().anyMatch(path::startsWith);
+
+    if (isAdminRoute) {
+      // Use GameConfigService to validate admin PIN
+      if (!gameConfigService.isValidAdminPin(pin)) {
+        ctx.abortWith(ErrorResponse.respond(Response.Status.FORBIDDEN,
+                "Admin access required"));
+        return;
+      }
+      // Admin authenticated
+      ctx.setProperty("isAdmin", true);
+      ctx.setProperty("adminPin", pin);
+      return;
     }
 
-    /** Only filter /<prefix>/user/** and /<prefix>/quiz/** */
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
-        String p = request.getRequestURI();
-        return !(p.startsWith(apiPrefix + "/user") || p.startsWith(apiPrefix + "/quiz"));
+    // Check if user-protected route
+    boolean needsAuth = false;
+    for (String p : PROTECTED_PREFIXES) {
+      if (path.startsWith(p)) {
+        needsAuth = true;
+        break;
+      }
     }
 
-    @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain) throws ServletException, IOException {
-
-        // Header is case-insensitive; curl example: -H "x-pin: 1234"
-        String pin = request.getHeader("x-pin");
-        if (pin == null || pin.isBlank()) {
-            unauthorized(response, "Missing x-pin header");
-            return;
-        }
-
-        Optional<User> userOpt = userRepository.findByPin(pin.trim());
-        if (userOpt.isEmpty()) {
-            unauthorized(response, "Invalid PIN");
-            return;
-        }
-
-        // Make userId available to controllers/resources
-        request.setAttribute("userId", userOpt.get().getId());
-
-        filterChain.doFilter(request, response);
+    if (!needsAuth) {
+      return;
     }
 
-    private void unauthorized(HttpServletResponse res, String msg) throws IOException {
-        res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        res.setContentType("application/json");
-        res.getWriter().write("{\"error\":\"" + msg.replace("\"", "\\\"") + "\"}");
+    // Require PIN for protected routes
+    if (pin == null || pin.isBlank()) {
+      ctx.abortWith(ErrorResponse.respond(Response.Status.UNAUTHORIZED, "PIN missing"));
+      return;
     }
+
+    Optional<User> user = userRepository.findByPin(pin);
+    if (user.isEmpty()) {
+      ctx.abortWith(ErrorResponse.respond(Response.Status.UNAUTHORIZED, "Invalid PIN"));
+      return;
+    }
+
+    ctx.setProperty("userId", user.get().getId());
+  }
+
 }

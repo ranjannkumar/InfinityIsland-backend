@@ -14,9 +14,6 @@ public class Catalog {
     private String belt;
     private List<Fact> facts;
 
-    public Catalog() {
-    }
-
     public String getId() {
         return id;
     }
@@ -56,37 +53,34 @@ public class Catalog {
     public void setFacts(List<Fact> facts) {
         this.facts = facts;
     }
-}
 
-class Fact {
-    private Integer a;
-    private Integer b;
-    private Boolean identical;
+    public static class Fact {
+        private Integer a;
+        private Integer b;
+        private Boolean identical;
 
-    public Fact() {
-    }
+        public Integer getA() {
+            return a;
+        }
 
-    public Integer getA() {
-        return a;
-    }
+        public void setA(Integer a) {
+            this.a = a;
+        }
 
-    public void setA(Integer a) {
-        this.a = a;
-    }
+        public Integer getB() {
+            return b;
+        }
 
-    public Integer getB() {
-        return b;
-    }
+        public void setB(Integer b) {
+            this.b = b;
+        }
 
-    public void setB(Integer b) {
-        this.b = b;
-    }
+        public Boolean getIdentical() {
+            return identical;
+        }
 
-    public Boolean getIdentical() {
-        return identical;
-    }
-
-    public void setIdentical(Boolean identical) {
-        this.identical = identical;
+        public void setIdentical(Boolean identical) {
+            this.identical = identical;
+        }
     }
 }

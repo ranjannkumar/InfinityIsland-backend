@@ -1,27 +1,40 @@
 package com.infinityisland.dao.user;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.util.HashMap;
+import java.time.LocalDate;
+import java.util.Date;
 import java.util.Map;
 
 @Document("users")
 public class User {
+
     @Id
     private String id;
-    private String name;
+
+    @Indexed
     private String pin;
+
+    // both are used by various spots
+    private String name;
+    private String displayName;
+
     private String theme;
 
-    private Map<String, ProgressState> progress;
-    private Map<String, DailyStats> dailyStats;
+    // Node-style flexible structure: { "L1": { ... }, "L2": { ... } }
+    private Map<String, Object> progress;
 
-    public User() {
-        theme = "animals";
-        progress = new HashMap<>();
-        dailyStats = new HashMap<>();
-    }
+    // auth-related, referenced by AuthService
+    private Integer currentStreak;  // nullable -> getter returns 0 if null
+    private String lastLoginDate;  // e.g., "2025-11-12"
+
+    // optional cached metrics
+    private Long grandTotalCorrect;
+    private Date updatedAt;
+
+    // --- getters/setters ---
 
     public String getId() {
         return id;
@@ -29,14 +42,6 @@ public class User {
 
     public void setId(String id) {
         this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
     }
 
     public String getPin() {
@@ -47,6 +52,22 @@ public class User {
         this.pin = pin;
     }
 
+    public String getName() {
+        return name != null ? name : displayName;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getDisplayName() {
+        return displayName != null ? displayName : name;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
     public String getTheme() {
         return theme;
     }
@@ -55,19 +76,43 @@ public class User {
         this.theme = theme;
     }
 
-    public Map<String, ProgressState> getProgress() {
+    public Map<String, Object> getProgress() {
         return progress;
     }
 
-    public void setProgress(Map<String, ProgressState> progress) {
+    public void setProgress(Map<String, Object> progress) {
         this.progress = progress;
     }
 
-    public Map<String, DailyStats> getDailyStats() {
-        return dailyStats;
+    public int getCurrentStreak() {
+        return currentStreak == null ? 0 : currentStreak;
     }
 
-    public void setDailyStats(Map<String, DailyStats> dailyStats) {
-        this.dailyStats = dailyStats;
+    public void setCurrentStreak(int currentStreak) {
+        this.currentStreak = currentStreak;
+    }
+
+    public String getLastLoginDate() {
+        return lastLoginDate;
+    }
+
+    public void setLastLoginDate(String lastLoginDate) {
+        this.lastLoginDate = lastLoginDate;
+    }
+
+    public Long getGrandTotalCorrect() {
+        return grandTotalCorrect;
+    }
+
+    public void setGrandTotalCorrect(Long grandTotalCorrect) {
+        this.grandTotalCorrect = grandTotalCorrect;
+    }
+
+    public Date getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Date updatedAt) {
+        this.updatedAt = updatedAt;
     }
 }

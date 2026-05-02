@@ -10,6 +10,11 @@ public class DailyStats {
         totalActiveMs = 0L;
     }
 
+    public DailyStats(Long correctCount, Long totalActiveMs) {
+        this.correctCount = correctCount;
+        this.totalActiveMs = totalActiveMs;
+    }
+
     public String getDate() {
         return date;
     }

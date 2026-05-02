@@ -1,14 +1,14 @@
 package com.infinityisland.dao.resource;
 
 public class LoginPinRequest {
-    String pin;
-    String name;
+    private String name;
+    private String pin;
 
-    public LoginPinRequest() {
+    public String getName() {
+        return name;
     }
 
-    public LoginPinRequest(String pin, String name) {
-        this.pin = pin;
+    public void setName(String name) {
         this.name = name;
     }
 
@@ -18,13 +18,5 @@ public class LoginPinRequest {
 
     public void setPin(String pin) {
         this.pin = pin;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
     }
 }

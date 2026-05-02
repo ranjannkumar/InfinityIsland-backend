@@ -1,348 +1,245 @@
 package com.infinityisland.service;
 
-import com.infinityisland.controller.QuizDtos;
-import com.infinityisland.dao.DailySummary;
 import com.infinityisland.dao.GeneratedQuestion;
 import com.infinityisland.dao.QuizRun;
-import com.infinityisland.dao.user.DailyStats;
-import com.infinityisland.dao.user.User;
-
-import com.infinityisland.repositories.DailySummaryRepository;
-import com.infinityisland.repositories.GeneratedQuestionRepository;
-import com.infinityisland.repositories.QuizRunRepository;
-import com.infinityisland.repositories.UserRepository;
+import com.infinityisland.model.GameModeType;
+import com.infinityisland.model.Operation;
+import com.infinityisland.model.QuizStatus;
+import com.infinityisland.controller.QuizResponses.AnswerResponse;
+import com.infinityisland.controller.QuizResponses.PrepareResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
-import java.time.Instant;
-import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static com.infinityisland.service.QuizUtils.*;
 
 @Service
 public class QuizService {
 
-    private final QuizRunRepository quizRunRepo;
-    private final GeneratedQuestionRepository gqRepo;
-    private final UserRepository userRepo;
-    private final DailySummaryRepository dailySummaryRepo;
+    private static final Logger log = LoggerFactory.getLogger(QuizService.class);
 
-    public QuizService(QuizRunRepository quizRunRepo,
-                       GeneratedQuestionRepository gqRepo,
-                       UserRepository userRepo,
-                       DailySummaryRepository dailySummaryRepo) {
-        this.quizRunRepo = quizRunRepo;
-        this.gqRepo = gqRepo;
-        this.userRepo = userRepo;
-        this.dailySummaryRepo = dailySummaryRepo;
+    private final CachedQuizRunService cachedQuizRuns;
+    private final CachedQuestionService cachedQuestions;
+    private final AttemptService attemptService;
+
+    @Autowired private QuizHelper helper;
+    @Autowired private ProgressionService progression;
+    @Autowired private GameConfigService gameConfig;
+    @Autowired private SurfModeHandler surfHandler;
+    @Autowired private RocketModeHandler rocketHandler;
+    @Autowired private BonusModeHandler bonusHandler;
+    @Autowired private LightningModeHandler lightningHandler;
+    @Autowired private NormalModeHandler normalHandler;
+    @Autowired private PretestModeHandler pretestHandler;
+
+    @Autowired
+    public QuizService(CachedQuizRunService cachedQuizRuns,
+                       CachedQuestionService cachedQuestions,
+                       AttemptService attemptService) {
+        this.cachedQuizRuns = cachedQuizRuns;
+        this.cachedQuestions = cachedQuestions;
+        this.attemptService = attemptService;
     }
 
-    // ---------------------- PREPARE ----------------------
+    // ===== PREPARE =====
 
-    public QuizDtos.PrepareResponse prepare(String userId, QuizDtos.PrepareRequest req) {
-        String op = StringUtils.hasText(req.operation()) ? req.operation() : "add";
-        String level = req.level();
-        String beltOrDegree = req.beltOrDegree();
-
-        // Load a bank for (op, level, beltOrDegree)
-        List<GeneratedQuestion> bank =
-                gqRepo.findByOperationAndLevelAndBeltOrDegree(op, level, beltOrDegree);
-        if (bank.isEmpty()) {
-            bank = synthesizeQuestions(op, level, beltOrDegree, 10);
-            gqRepo.saveAll(bank);
+    public PrepareResponse prepare(String userId, Integer level, String beltOrDegree,
+                                   String operation, Boolean gameMode, Integer targetCorrect,
+                                   String gameModeType) {
+        if (beltOrDegree == null || beltOrDegree.isBlank()) {
+            throw new IllegalArgumentException("beltOrDegree is required");
         }
 
-        // Create run
-        QuizRun run = new QuizRun();
-        run.setUserId(userId);
-        run.setOperation(op);
-        run.setLevel(level);
-        run.setBeltOrDegree(beltOrDegree);
-        run.setStatus("prepared");
-        run.setCreatedAt(Instant.now());
-        run.setItemIds(bank.stream().map(GeneratedQuestion::getId).collect(Collectors.toList()));
+        PrepareResponse resume = helper.findActiveGameModeResume(userId);
+        if (resume != null) return resume;
+
+        boolean isGameMode = Boolean.TRUE.equals(gameMode);
+        String op = nvl(operation, Operation.ADD.value());
+        String belt = nvl(beltOrDegree, "white");
+        int lvl = safe(level, 1);
+
+        if (!gameConfig.isOperationEnabled(op)) {
+            throw new IllegalStateException("Operation '" + op + "' is not currently available.");
+        }
+        if (!progression.isOperationUnlocked(userId, op)) {
+            throw new IllegalStateException("Operation '" + op + "' is not yet unlocked. Complete the prerequisite operation first.");
+        }
+
+        String modeType = gameModeType != null ? gameModeType.toLowerCase() : null;
+        boolean isSurfMode = GameModeType.SURF.value().equals(modeType);
+        boolean isRocketMode = GameModeType.ROCKET.value().equals(modeType);
+        boolean isBonusMode = GameModeType.BONUS.value().equals(modeType);
+        boolean isLightningMode = isGameMode && !isSurfMode && !isRocketMode && !isBonusMode;
+        boolean isPretestMode = GameModeType.PRETEST.value().equals(modeType);
+
+        if (!isPretestMode && !isGameMode && progression.isPretestRequired(userId, op, lvl)) {
+            log.info("[PRETEST] Pretest required for user {} at level {} operation {}", userId, lvl, op);
+            return pretestHandler.preparePretestMode(userId, lvl, op);
+        }
+
+        if (isPretestMode) return pretestHandler.preparePretestMode(userId, lvl, op);
+        if (isBonusMode) return bonusHandler.prepareBonusMode(userId, lvl, belt, op);
+        if (isRocketMode) return rocketHandler.prepareRocketMode(userId, lvl, belt, op);
+        if (isSurfMode) return surfHandler.prepareSurfMode(userId, lvl, belt, op);
+        if (isLightningMode) return lightningHandler.prepareLightningMode(userId, lvl, belt, op, targetCorrect);
+        return normalHandler.prepareNormalMode(userId, lvl, belt, op);
+    }
+
+    // ===== START =====
+
+    public Object start(String quizRunId) {
+        QuizRun run = helper.mustGetRun(quizRunId);
+
+        if (QuizStatus.COMPLETED.value().equalsIgnoreCase(run.getStatus())) {
+            return helper.buildCompletedResponse(run);
+        }
+
+        if (QuizStatus.RUNNING.value().equalsIgnoreCase(run.getStatus())) {
+            if (run.isSurfMode()) surfHandler.autoRestartIfFailed(run);
+            else if (run.isRocketMode()) rocketHandler.autoRestartIfFailed(run);
+            else if (run.isBonusMode()) bonusHandler.autoRestartIfFailed(run);
+            return helper.buildStartResumedResponse(run);
+        }
+
+        if (run.getItems() == null || run.getItems().isEmpty()) {
+            List<GeneratedQuestion> set;
+            if (run.isPretestMode()) {
+                set = pretestHandler.buildPretestQuizSet(run);
+                run.setTotalQuestions(gameConfig.getPretestQuestionCount());
+            } else if (run.isSurfMode()) {
+                set = surfHandler.buildSurfQuizSet(run);
+                run.setTotalQuestions(gameConfig.getSurfQuestionsPerQuiz());
+            } else if (run.isRocketMode()) {
+                set = rocketHandler.buildRocketQuizSet(run);
+                run.setTotalQuestions(gameConfig.getRocketQuestionsPerQuiz());
+            } else if (run.isBonusMode()) {
+                set = bonusHandler.buildBonusQuizSet(run);
+                // bonus has no fixed total — totalQuestions left null, the run continues
+                // until bonusStreak hits bonusTargetCorrect.
+            } else {
+                set = normalHandler.buildQuizSet(run);
+                if (run.getTotalQuestions() == null) run.setTotalQuestions(set.size());
+            }
+            run.setItems(set.stream().map(GeneratedQuestion::getId).collect(Collectors.toList()));
+            cachedQuestions.saveAll(set);
+        }
+
+        run.setStatus(QuizStatus.RUNNING.value());
         run.setCurrentIndex(0);
-        run.setCorrect(0);
-        run.setWrong(0);
-        run.setTotalActiveMs(0L);
-        quizRunRepo.save(run);
 
-        // practice list (empty for now)
-        return new QuizDtos.PrepareResponse(run.getId(), List.of());
-    }
-
-    // ---------------------- START ----------------------
-
-    public QuizDtos.StartResponse start(String userId, QuizDtos.StartRequest req) {
-        QuizRun run = guardRunOwnedByUser(req.quizRunId(), userId);
-        // move to in-progress if still prepared
-        if (!"in-progress".equals(run.getStatus())) {
-            run.setStatus("in-progress");
-            quizRunRepo.save(run);
-        }
-        QuizDtos.QuestionDto q = mapQuestion(run, run.getCurrentIndex());
-        return new QuizDtos.StartResponse(q);
-    }
-
-    // ---------------------- ANSWER ----------------------
-
-    public QuizDtos.AnswerOrPracticeResponse answer(String userId, QuizDtos.AnswerRequest req) {
-        QuizRun run = guardRunOwnedByUser(req.quizRunId(), userId);
-        ensureActive(run);
-
-        String currentQid = getCurrentQuestionId(run);
-        if (!Objects.equals(currentQid, req.questionId())) {
-            // client out of sync → send current
-            return new QuizDtos.AnswerOrPracticeResponse(false, false,
-                    mapQuestion(run, run.getCurrentIndex()), null,
-                    run.getCorrect(), null);
+        if (run.isPretestMode() || (isBlack(run.getBeltOrDegree()) && !run.isSurfMode() && !run.isRocketMode())) {
+            helper.ensureTimer(run);
+            run.getTimer().setStartedAt(helper.now());
         }
 
-        GeneratedQuestion gq = getQuestionById(currentQid);
-        boolean isCorrect = req.answer() != null && req.answer().intValue() == gq.getCorrectAnswer();
+        helper.touch(run);
+        run = cachedQuizRuns.updateCacheAndSaveSync(run);
 
-        long deltaMs = req.responseMs() != null ? req.responseMs() : 0L;
-        run.setTotalActiveMs(run.getTotalActiveMs() + deltaMs);
+        List<GeneratedQuestion> questions = cachedQuestions.findAllById(run.getItems());
+        return helper.buildStartResponse(run, questions, false);
+    }
 
-        if (isCorrect) {
-            run.setCorrect(run.getCorrect() + 1);
+    // ===== ANSWER =====
 
-            boolean isLast = run.getCurrentIndex() >= run.getItemIds().size() - 1;
-            if (isLast) {
-                run.setStatus("completed");
-                quizRunRepo.save(run);
+    public Object answer(String quizRunId, String questionId, int answer, long responseMs,
+                         Boolean forcePass, Boolean skipLevelAward) {
+        QuizRun run = helper.mustGetRun(quizRunId);
 
-                QuizDtos.DailyStatsDto daily = addToDaily(userId, 1, deltaMs);
-                return new QuizDtos.AnswerOrPracticeResponse(true, null, null, null,
-                        run.getCorrect(), daily);
-            } else {
-                run.setCurrentIndex(run.getCurrentIndex() + 1);
-                quizRunRepo.save(run);
+        if (QuizStatus.COMPLETED.value().equalsIgnoreCase(nvl(run.getStatus(), ""))) {
+            return helper.buildCompletedResponse(run);
+        }
+        guardRunning(run);
 
-                addToDaily(userId, 1, deltaMs);
+        String currentId = currentQuestionId(run);
+        String prevId = previousQuestionId(run);
 
-                QuizDtos.QuestionDto next = mapQuestion(run, run.getCurrentIndex());
-                return new QuizDtos.AnswerOrPracticeResponse(null, null, next, null,
-                        run.getCorrect(), null);
+        if (!Objects.equals(questionId, currentId)) {
+            if (run.getCurrentIndex() > 0 && Objects.equals(questionId, prevId)) {
+                return helper.buildDuplicateResponse(run);
             }
-        } else {
-            // wrong → practice
-            QuizDtos.QuestionDto practice = toDto(gq);
-            quizRunRepo.save(run); // keep state
-            return new QuizDtos.AnswerOrPracticeResponse(null, null, null, practice,
-                    run.getCorrect(), null);
+            throw new IllegalArgumentException("Not the current question");
         }
+
+        if (Boolean.TRUE.equals(forcePass)) {
+            return helper.handleForcePass(run, responseMs, Boolean.TRUE.equals(skipLevelAward));
+        }
+
+        if (run.isPretestMode()) return pretestHandler.handlePretestModeAnswer(run, questionId, answer, responseMs);
+        if (run.isSurfMode()) return surfHandler.handleSurfModeAnswer(run, questionId, answer, responseMs);
+        if (run.isRocketMode()) return rocketHandler.handleRocketModeAnswer(run, questionId, answer, responseMs);
+        if (run.isBonusMode()) return bonusHandler.handleBonusModeAnswer(run, questionId, answer, responseMs);
+        if (run.isLightningMode()) return lightningHandler.handleLightningModeAnswer(run, questionId, answer, responseMs);
+        return normalHandler.handleNormalModeAnswer(run, questionId, answer, responseMs);
     }
 
-    // ---------------------- INACTIVITY ----------------------
+    // ===== PRACTICE ANSWER =====
 
-    public QuizDtos.AnswerOrPracticeResponse inactivity(String userId, QuizDtos.InactivityRequest req) {
-        QuizRun run = guardRunOwnedByUser(req.quizRunId(), userId);
-        ensureActive(run);
+    public Object practiceAnswer(String quizRunId, String questionId, int answer) {
+        QuizRun run = helper.mustGetRun(quizRunId);
+        guardRunningOrPrepared(run);
 
-        String currentQid = getCurrentQuestionId(run);
-        if (!Objects.equals(currentQid, req.questionId())) {
-            return new QuizDtos.AnswerOrPracticeResponse(false, false,
-                    mapQuestion(run, run.getCurrentIndex()), null,
-                    run.getCorrect(), null);
+        GeneratedQuestion pq = cachedQuestions.findById(questionId).orElse(null);
+        if (pq == null) throw new IllegalArgumentException("Practice question not found");
+
+        boolean correct = pq.getCorrectAnswer() != null && pq.getCorrectAnswer() == answer;
+        attemptService.recordAttemptAsync(run, pq, answer, correct, null, "practice");
+
+        if (!correct) return helper.buildPracticeIncorrectResponse(run, pq);
+
+        if (run.isSurfMode() && Boolean.TRUE.equals(run.getSurfQuizFailed())) {
+            return surfHandler.surfQuizRestart(run);
+        }
+        if (run.isRocketMode() && Boolean.TRUE.equals(run.getRocketQuizFailed())) {
+            return rocketHandler.rocketQuizRestart(run);
+        }
+        if (run.isBonusMode() && Boolean.TRUE.equals(run.getBonusInPractice())) {
+            return bonusHandler.bonusResumeAfterPractice(run);
         }
 
-        // black belts immediately complete on inactivity (parity with Node’s “hard mode”)
-        if (run.getBeltOrDegree() != null && run.getBeltOrDegree().toLowerCase().startsWith("black")) {
-            run.setStatus("completed");
-            quizRunRepo.save(run);
-            QuizDtos.DailyStatsDto daily = addToDaily(userId, 0, 0);
-            return new QuizDtos.AnswerOrPracticeResponse(true, null, null, null,
-                    run.getCorrect(), daily);
-        }
-
-        // otherwise provide practice for the same problem
-        QuizDtos.QuestionDto practice = toDto(getQuestionById(currentQid));
-        return new QuizDtos.AnswerOrPracticeResponse(null, null, null, practice,
-                run.getCorrect(), null);
-    }
-
-    // ---------------------- PRACTICE ANSWER ----------------------
-
-    public QuizDtos.AnswerOrPracticeResponse practiceAnswer(String userId, QuizDtos.PracticeAnswerRequest req) {
-        QuizRun run = guardRunOwnedByUser(req.quizRunId(), userId);
-        ensureActive(run);
-
-        String currentQid = getCurrentQuestionId(run);
-        GeneratedQuestion gq = getQuestionById(currentQid);
-        boolean correct = req.answer() != null && req.answer().intValue() == gq.getCorrectAnswer();
-
-        boolean isLast = run.getCurrentIndex() >= run.getItemIds().size() - 1;
-
-        if (correct) {
-            if (isLast) {
-                // end quiz after last question’s practice
-                run.setStatus("completed");
-                quizRunRepo.save(run);
-                QuizDtos.DailyStatsDto daily = addToDaily(userId, 0, 0);
-                return new QuizDtos.AnswerOrPracticeResponse(true, null, null, null,
-                        run.getCorrect(), daily);
-            } else {
-                // resume main quiz on next item
-                run.setCurrentIndex(run.getCurrentIndex() + 1);
-                quizRunRepo.save(run);
-                QuizDtos.QuestionDto next = mapQuestion(run, run.getCurrentIndex());
-                return new QuizDtos.AnswerOrPracticeResponse(null, true, next, null,
-                        run.getCorrect(), null);
+        if (QuizStatus.RUNNING.value().equalsIgnoreCase(run.getStatus())) {
+            AnswerResponse result = helper.resumeAfterPractice(run);
+            if (result == null) {
+                return pretestHandler.completePretestMode(run, null);
             }
-        } else {
-            // keep practicing same item
-            QuizDtos.QuestionDto practice = toDto(gq);
-            return new QuizDtos.AnswerOrPracticeResponse(null, null, null, practice,
-                    run.getCorrect(), null);
-        }
-    }
-
-    // ---------------------- COMPLETE ----------------------
-
-    public QuizDtos.AnswerOrPracticeResponse complete(String userId, QuizDtos.CompleteRequest req) {
-        QuizRun run = guardRunOwnedByUser(req.quizRunId(), userId);
-        if (!"completed".equals(run.getStatus())) {
-            run.setStatus("completed");
-            quizRunRepo.save(run);
-        }
-        QuizDtos.DailyStatsDto daily = addToDaily(userId, 0, 0);
-        return new QuizDtos.AnswerOrPracticeResponse(true, null, null, null,
-                run.getCorrect(), daily);
-    }
-
-    // ---------------------- helpers ----------------------
-
-    private QuizRun guardRunOwnedByUser(String runId, String userId) {
-        return quizRunRepo.findById(runId)
-                .filter(r -> Objects.equals(r.getUserId(), userId))
-                .orElseThrow(() -> new NoSuchElementException("QuizRun not found"));
-    }
-
-    private void ensureActive(QuizRun run) {
-        if (!"prepared".equals(run.getStatus()) && !"in-progress".equals(run.getStatus())) {
-            throw new IllegalStateException("QuizRun is not active");
-        }
-        if (!"in-progress".equals(run.getStatus())) {
-            run.setStatus("in-progress");
-            quizRunRepo.save(run);
-        }
-    }
-
-    private String getCurrentQuestionId(QuizRun run) {
-        List<String> ids = run.getItemIds();
-        if (ids == null || ids.isEmpty()) throw new IllegalStateException("Run has no items");
-        int idx = Math.min(Math.max(run.getCurrentIndex(), 0), ids.size() - 1);
-        return ids.get(idx);
-    }
-
-    private GeneratedQuestion getQuestionById(String id) {
-        return gqRepo.findById(id).orElseThrow(() -> new NoSuchElementException("Question not found"));
-    }
-
-    private QuizDtos.QuestionDto mapQuestion(QuizRun run, int index) {
-        String qid = run.getItemIds().get(index);
-        return toDto(getQuestionById(qid));
-    }
-
-    private QuizDtos.QuestionDto toDto(GeneratedQuestion gq) {
-        return new QuizDtos.QuestionDto(
-                gq.getId(),
-                gq.getOperation(),
-                gq.getLevel(),
-                gq.getBeltOrDegree(),
-                gq.getA(),
-                gq.getB(),
-                gq.getQuestion(),
-                gq.getCorrectAnswer(),
-                gq.getChoices() // List<Integer>
-        );
-    }
-
-    private QuizDtos.DailyStatsDto addToDaily(String userId, long addCorrect, long addMs) {
-        User u = userRepo.findById(userId).orElseThrow();
-        String today = LocalDate.now().toString();
-
-        Map<String, DailyStats> map = u.getDailyStats();
-        if (map == null) {
-            map = new HashMap<>();
-            u.setDailyStats(map);
+            return result;
         }
 
-        DailyStats ds = map.get(today);
-        if (ds == null) {
-            ds = new DailyStats();
-            ds.setDate(today);
-            ds.setCorrectCount(0L);
-            ds.setTotalActiveMs(0L);
-            map.put(today, ds);
-        }
-        ds.setCorrectCount(ds.getCorrectCount() + addCorrect);
-        ds.setTotalActiveMs(ds.getTotalActiveMs() + addMs);
-        userRepo.save(u);
-
-        // Keep daily_summaries in sync (as your Node did)
-        DailySummary sum = dailySummaryRepo.findByUserIdAndDate(userId, today).orElseGet(() -> {
-            DailySummary d = new DailySummary();
-            d.setUserId(userId);
-            d.setDate(today);
-            d.setCorrectCount(0L);
-            d.setTotalActiveMs(0L);
-            d.setReportSentMarker(false);
-            return d;
-        });
-        sum.setCorrectCount(sum.getCorrectCount() + addCorrect);
-        sum.setTotalActiveMs(sum.getTotalActiveMs() + addMs);
-        dailySummaryRepo.save(sum);
-
-        long grand = dailySummaryRepo.findByUserId(userId).stream()
-                .mapToLong(DailySummary::getCorrectCount).sum();
-
-        return new QuizDtos.DailyStatsDto(ds.getCorrectCount(), ds.getTotalActiveMs(), grand);
+        helper.touch(run);
+        cachedQuizRuns.save(run);
+        AnswerResponse resp = new AnswerResponse();
+        resp.resume = true;
+        return resp;
     }
 
-    private List<GeneratedQuestion> synthesizeQuestions(String op, String level, String belt, int n) {
-        Random r = new Random();
-        List<GeneratedQuestion> out = new ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            int a = r.nextInt(10) + 1, b = r.nextInt(10) + 1;
-            int ans;
-            String text;
-            int aa = a, bb = b;
+    // ===== INACTIVITY =====
 
-            switch (op) {
-                case "sub":
-                    ans = a - b;
-                    text = a + " - " + b + " = ?";
-                    break;
-                case "mul":
-                    ans = a * b;
-                    text = a + " × " + b + " = ?";
-                    break;
-                case "div":
-                    ans = (b == 0 ? 0 : a);
-                    text = (a * b) + " ÷ " + b + " = ?";
-                    aa = a * b;
-                    bb = b;
-                    break;
-                default:
-                    ans = a + b;
-                    text = a + " + " + b + " = ?";
-                    break;
-            }
+    public Object inactivity(String quizRunId) {
+        QuizRun run = helper.mustGetRun(quizRunId);
 
-            GeneratedQuestion gq = new GeneratedQuestion();
-            gq.setOperation(op);
-            gq.setLevel(level);
-            gq.setBeltOrDegree(belt);
-            gq.setA(aa);
-            gq.setB(bb);
-            gq.setQuestion(text);
-            gq.setCorrectAnswer(ans);
-            gq.setChoices(java.util.List.of(ans, ans + 1, ans - 1, ans + 2));
-            gq.setSource("current");
-            out.add(gq);
+        if (!QuizStatus.RUNNING.value().equalsIgnoreCase(run.getStatus())) {
+            return helper.buildLateInactivityResponse(run);
         }
-        return out;
+
+        String currentQId = currentQuestionId(run);
+        if (currentQId == null) throw new IllegalStateException("No current question for inactivity");
+
+        GeneratedQuestion currentQuestion = cachedQuestions.findById(currentQId)
+                .orElseThrow(() -> new IllegalArgumentException("Current question not found"));
+
+        if (run.isSurfMode()) return surfHandler.handleSurfModeAnswer(run, currentQId, -1, gameConfig.getInactivityThresholdMs() + 1);
+        if (run.isRocketMode()) return rocketHandler.handleRocketModeAnswer(run, currentQId, -1, gameConfig.getInactivityThresholdMs() + 1);
+        if (run.isBonusMode()) return bonusHandler.handleBonusModeAnswer(run, currentQId, -1, gameConfig.getInactivityThresholdMs() + 1);
+
+        return helper.handleNormalInactivity(run, currentQuestion);
+    }
+
+    // ===== COMPLETE =====
+
+    public Object complete(String quizRunId) {
+        return helper.complete(quizRunId);
     }
 }
