@@ -79,7 +79,10 @@ public final class QuizUtils {
         if (Operation.ADD.value().equalsIgnoreCase(op)) return a + b;
         if (Operation.SUB.value().equalsIgnoreCase(op) || "subtract".equalsIgnoreCase(op)) return a - b;
         if (Operation.MUL.value().equalsIgnoreCase(op) || "multiply".equalsIgnoreCase(op)) return a * b;
-        if (Operation.DIV.value().equalsIgnoreCase(op) || "divide".equalsIgnoreCase(op)) return b == 0 ? 0 : a / b;
+        if (Operation.DIV.value().equalsIgnoreCase(op) || "divide".equalsIgnoreCase(op)) {
+            if (b == 0) throw new IllegalArgumentException("division by zero (a=" + a + ")");
+            return a / b;
+        }
         return a + b;
     }
 

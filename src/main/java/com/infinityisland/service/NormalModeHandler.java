@@ -250,7 +250,10 @@ public class NormalModeHandler {
 
         List<GeneratedQuestion> questions = new ArrayList<>();
 
-        if (lvl == 1 && Belt.WHITE.value().equals(belt)) {
+        // L1-white digit-introduction (0+0, digit recognition) doesn't apply to division
+        // because (a, 0) is undefined for div. Division L1 white falls through to the
+        // standard current-pair + previous-pool generator below.
+        if (lvl == 1 && Belt.WHITE.value().equals(belt) && !Operation.DIV.value().equalsIgnoreCase(op)) {
             questions.add(helper.buildQuestionObject(op, lvl, belt, 0, 0, "current", buildQuestionText(op, 0, 0)));
             questions.add(helper.buildQuestionObject(op, lvl, belt, 0, 0, "current", buildQuestionText(op, 0, 0)));
 
@@ -366,7 +369,8 @@ public class NormalModeHandler {
             }
         }
 
-        int numDigitQuestions = (lvl == 1) ? 3 : 0;
+        // Skip digit questions for division (a÷0 undefined).
+        int numDigitQuestions = (lvl == 1 && !Operation.DIV.value().equalsIgnoreCase(op)) ? 3 : 0;
         int questionsNeeded = totalQuestions - numDigitQuestions;
         int alreadyIncluded = questions.size();
         int remainingNeeded = questionsNeeded - alreadyIncluded;

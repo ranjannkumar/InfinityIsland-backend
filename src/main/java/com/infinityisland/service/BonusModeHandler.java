@@ -144,6 +144,7 @@ public class BonusModeHandler {
         out.gameModeType = GameModeType.BONUS.value();
         out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
         out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
+        out.bonusCorrectStreak = 0;
         out.level = lvl;
         out.beltOrDegree = belt;
         out.operation = op;
@@ -159,6 +160,7 @@ public class BonusModeHandler {
         out.gameModeType = GameModeType.BONUS.value();
         out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
         out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
+        out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
         out.currentIndex = nvl(run.getCurrentIndex(), 0);
         out.level = run.getLevel();
         out.beltOrDegree = run.getBeltOrDegree();
@@ -233,7 +235,7 @@ public class BonusModeHandler {
         resp.gameModeType = GameModeType.BONUS.value();
         if (videoBoundary) resp.showBonusVideo = true;
         resp.dailyStats = dailyStats;
-        // bonusStreak / bonusTotalCorrect intentionally NOT set — counters never leave the server.
+        resp.bonusCorrectStreak = newStreak;
         return resp;
     }
 
@@ -265,6 +267,7 @@ public class BonusModeHandler {
         resp.practice = practiceQ;
         resp.gameMode = true;
         resp.gameModeType = GameModeType.BONUS.value();
+        resp.bonusCorrectStreak = 0;
         return resp;
     }
 
@@ -295,6 +298,7 @@ public class BonusModeHandler {
         resp.nextIndex = nextIndex;
         resp.gameMode = true;
         resp.gameModeType = GameModeType.BONUS.value();
+        resp.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
         return resp;
     }
 
@@ -339,6 +343,7 @@ public class BonusModeHandler {
         out.summary = helper.summaryOf(run);
         out.sessionCorrectCount = nvl(run.getMainFlowCorrect(), 0);
         out.dailyStats = dailyStats;
+        out.bonusCorrectStreak = gameConfig.getBonusTargetCorrect();
         return out;
     }
 
@@ -377,8 +382,8 @@ public class BonusModeHandler {
 
         List<GeneratedQuestion> questions = new ArrayList<>();
 
-        // L1-white digit-recognition special case (matches NormalModeHandler).
-        if (lvl == 1 && Belt.WHITE.value().equals(belt)) {
+        // L1-white digit-recognition special case (matches NormalModeHandler). Skip for div: a÷0 undefined.
+        if (lvl == 1 && Belt.WHITE.value().equals(belt) && !Operation.DIV.value().equalsIgnoreCase(op)) {
             int identityCount = Math.min(2, Math.max(1, batchSize / 5));
             for (int i = 0; i < identityCount; i++) {
                 questions.add(helper.buildQuestionObject(op, lvl, belt, 0, 0, "current",

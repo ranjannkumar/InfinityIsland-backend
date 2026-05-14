@@ -20,6 +20,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -35,6 +36,7 @@ import static com.infinityisland.service.QuizUtils.*;
  * timer management, run lookups, and quiz summary construction.
  */
 @Service
+@DependsOn("divisionCatalogSeeder")
 public class QuizHelper {
 
     private static final Logger log = LoggerFactory.getLogger(QuizHelper.class);
@@ -206,7 +208,9 @@ public class QuizHelper {
         List<GeneratedQuestion> practiceObjects = new ArrayList<>();
         if (isBlack(belt)) {
             // No practice for black belt
-        } else if (lvl == 1 && Belt.WHITE.value().equals(belt)) {
+        } else if (lvl == 1 && Belt.WHITE.value().equals(belt) && !Operation.DIV.value().equalsIgnoreCase(op)) {
+            // (0,0) practice doesn't apply to division (a÷0 undefined). Fall through to the
+            // canonical-pair path below for div L1 white.
             practiceObjects.add(buildQuestionObject(op, lvl, belt, 0, 0, "current", null));
         } else {
             int[] pair = getCanonicalPair(op, lvl, belt);
@@ -617,6 +621,7 @@ public class QuizHelper {
             // Counter (bonusStreak) is intentionally NOT included — client must not show progress.
             out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
             out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
+            out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
             // If user is mid-practice (got a wrong answer last and hasn't completed practice),
             // expose that boolean so the client renders the practice question rather than the next quiz question.
             if (Boolean.TRUE.equals(run.getBonusInPractice())) {
@@ -671,6 +676,7 @@ public class QuizHelper {
             out.gameModeType = GameModeType.BONUS.value();
             out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
             out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
+            out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
         } else if (run.isLightningMode()) {
             out.gameMode = true;
             out.gameModeType = GameModeType.LIGHTNING.value();
@@ -730,6 +736,7 @@ public class QuizHelper {
         } else if (run.isBonusMode()) {
             out.gameMode = true;
             out.gameModeType = GameModeType.BONUS.value();
+            out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
             if (Boolean.TRUE.equals(run.getPassed())) {
                 out.beltAwarded = true;
                 out.bonusComplete = true;
@@ -772,7 +779,7 @@ public class QuizHelper {
         } else if (run.isBonusMode()) {
             resp.gameMode = true;
             resp.gameModeType = GameModeType.BONUS.value();
-            // Counter intentionally not exposed.
+            resp.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
         } else if (run.isLightningMode()) {
             resp.gameMode = true;
             resp.gameModeType = GameModeType.LIGHTNING.value();

@@ -308,7 +308,9 @@ public class PretestModeHandler {
             }
         }
 
-        int numDigitQuestions = (lvl == 1) ? 3 : 0;
+        // Digit-recognition questions are an L1 add/sub/mul concept (a, 0). Division would
+        // produce a÷0 which is undefined, so skip for division.
+        int numDigitQuestions = (lvl == 1 && !Operation.DIV.value().equalsIgnoreCase(op)) ? 3 : 0;
         int questionsNeeded = totalQuestions - numDigitQuestions;
         int alreadyIncluded = questions.size();
         int remainingNeeded = questionsNeeded - alreadyIncluded;

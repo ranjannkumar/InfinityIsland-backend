@@ -59,6 +59,7 @@ public final class QuizResponses {
         public Integer bonusTargetCorrect;
         public Integer bonusVideoIntervalCorrect;
         public Boolean bonusInPractice;
+        public Integer bonusCorrectStreak;
 
         // Pretest mode
         public Long pretestTimeLimitMs;
@@ -106,6 +107,7 @@ public final class QuizResponses {
         // Bonus mode
         public Integer bonusTargetCorrect;
         public Integer bonusVideoIntervalCorrect;
+        public Integer bonusCorrectStreak;
     }
 
     // -------- Answer / Practice / Inactivity response --------
@@ -181,6 +183,7 @@ public final class QuizResponses {
         public Boolean bonusRequired;         // emitted by Rocket completion to tell the client to start bonus mode
         public Boolean bonusFailed;           // true on wrong/inactivity in bonus (UI uses this to show practice)
         public Boolean bonusQuizRestarted;    // true after correct practice answer resumes the bonus quiz
+        public Integer bonusCorrectStreak;    // current consecutive-correct count (0..bonusTargetCorrect)
 
         // Quiz restart (surf/rocket)
         public List<?> questions;

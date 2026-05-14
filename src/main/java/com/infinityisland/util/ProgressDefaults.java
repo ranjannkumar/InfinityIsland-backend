@@ -24,6 +24,10 @@ public final class ProgressDefaults {
         mulNode.put("L1", createLevelNode(1, false));
         progress.put(Operation.MUL.value(), mulNode);
 
+        Map<String, Object> divNode = new LinkedHashMap<>();
+        divNode.put("L1", createLevelNode(1, false));
+        progress.put(Operation.DIV.value(), divNode);
+
         return progress;
     }
 
