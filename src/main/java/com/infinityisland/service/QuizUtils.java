@@ -89,6 +89,31 @@ public final class QuizUtils {
     // ===== Choice builders =====
 
     public static List<Integer> buildChoices(int correct) {
+        return buildChoices(null, 0, 0, correct);
+    }
+
+    /**
+     * Operation-aware multiple-choice generator.
+     *
+     * For multiplication the distractors are drawn from nearby factor pairs so the
+     * options aren't just arithmetic neighbours (kids learn 6×7=42's neighbours are
+     * not products of small single-digit factors). For add/sub/div we keep the
+     * existing ±1, ±2 heuristic — curriculum-appropriate at small numbers.
+     *
+     * Edge case (PRD page 8): when correct == 0, return {0, 1, 2, 3} for any op
+     * so the child always sees meaningful options.
+     */
+    public static List<Integer> buildChoices(String op, int a, int b, int correct) {
+        if (correct == 0) {
+            List<Integer> fallback = new ArrayList<>(List.of(0, 1, 2, 3));
+            Collections.shuffle(fallback);
+            return fallback;
+        }
+
+        if (Operation.MUL.value().equalsIgnoreCase(op) || "multiply".equalsIgnoreCase(op)) {
+            return buildMultiplicationChoices(a, b, correct);
+        }
+
         Set<Integer> s = new LinkedHashSet<>();
         s.add(correct);
         s.add(Math.max(0, correct + 1));
@@ -113,6 +138,50 @@ public final class QuizUtils {
         }
 
         List<Integer> choices = new ArrayList<>(s);
+        Collections.shuffle(choices);
+        return choices;
+    }
+
+    private static List<Integer> buildMultiplicationChoices(int a, int b, int correct) {
+        // Candidate distractors: products of nearby factor pairs.
+        LinkedHashSet<Integer> pool = new LinkedHashSet<>();
+        int[][] offsets = {
+                { -1,  0 }, { +1,  0 },          // off-by-one on a
+                {  0, -1 }, {  0, +1 },          // off-by-one on b
+                { -1, -1 }, { +1, +1 },          // diagonal
+                { -1, +1 }, { +1, -1 },          // anti-diagonal
+                { -2,  0 }, { +2,  0 },
+                {  0, -2 }, {  0, +2 },
+        };
+        for (int[] off : offsets) {
+            int na = a + off[0];
+            int nb = b + off[1];
+            if (na < 0 || nb < 0 || na > 9 || nb > 9) continue;
+            int product = na * nb;
+            if (product == correct || product < 0) continue;
+            pool.add(product);
+        }
+
+        // Trim to 3 distractors. Shuffle for variety.
+        List<Integer> distractors = new ArrayList<>(pool);
+        Collections.shuffle(distractors);
+        while (distractors.size() > 3) {
+            distractors.remove(distractors.size() - 1);
+        }
+
+        // Fallback if not enough product-based candidates (shouldn't happen for 0<correct<=81).
+        ThreadLocalRandom rnd = ThreadLocalRandom.current();
+        int safety = 0;
+        while (distractors.size() < 3 && safety < 30) {
+            int candidate = correct + rnd.nextInt(-3, 4);
+            if (candidate >= 0 && candidate != correct && !distractors.contains(candidate)) {
+                distractors.add(candidate);
+            }
+            safety++;
+        }
+
+        List<Integer> choices = new ArrayList<>(distractors);
+        choices.add(correct);
         Collections.shuffle(choices);
         return choices;
     }

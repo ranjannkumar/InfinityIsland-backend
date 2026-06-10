@@ -36,7 +36,7 @@ import static com.infinityisland.service.QuizUtils.*;
  * timer management, run lookups, and quiz summary construction.
  */
 @Service
-@DependsOn("divisionCatalogSeeder")
+@DependsOn({"divisionCatalogSeeder", "multiplicationCatalogSeeder"})
 public class QuizHelper {
 
     private static final Logger log = LoggerFactory.getLogger(QuizHelper.class);
@@ -183,7 +183,7 @@ public class QuizHelper {
         if (isPractice) {
             g.setChoices(buildPracticeChoices(correct));
         } else {
-            g.setChoices(buildChoices(correct));
+            g.setChoices(buildChoices(op, a, b, correct));
         }
 
         g.setSource(source);
@@ -334,7 +334,8 @@ public class QuizHelper {
         practice.setSource("surf-practice");
         practice.setSeed(UUID.randomUUID().toString());
 
-        practice.setChoices(buildChoices(surfQ.getCorrectAnswer()));
+        practice.setChoices(buildChoices(surfQ.getOperation(),
+                surfQ.getParams().getA(), surfQ.getParams().getB(), surfQ.getCorrectAnswer()));
 
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         practice.setCreatedAt(now);
@@ -361,7 +362,8 @@ public class QuizHelper {
         practice.setSource("bonus-practice");
         practice.setSeed(UUID.randomUUID().toString());
 
-        practice.setChoices(buildChoices(bonusQ.getCorrectAnswer()));
+        practice.setChoices(buildChoices(bonusQ.getOperation(),
+                bonusQ.getParams().getA(), bonusQ.getParams().getB(), bonusQ.getCorrectAnswer()));
 
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         practice.setCreatedAt(now);

@@ -1007,6 +1007,120 @@ test_operations_enabled_state() {
 }
 
 # =============================================================================
+# TEST 22: Mul L9/L10 Belt Placements Match Seed (Bug 1 regression guard)
+# Per seed-multiplication-catalogs.js, L9 blue MUST be 8×7 (not 9×7 — that's L9 green).
+# L10 belts must match the API doc Levels 6-10 example.
+# =============================================================================
+test_mul_belt_placement_l9_l10() {
+  say "TEST 22: Mul L9/L10 Belt Placements Match Canonical Seed"
+
+  post_json "/admin/restore-user" "{\"pin\":\"$PIN\",\"operations\":{\"add\":19,\"sub\":11,\"mul\":10}}" "$ADMIN_PIN" >/dev/null
+
+  # Format: "level belt expected_a expected_b"
+  local expectations=(
+    "9 white 8 8"
+    "9 yellow 9 8"
+    "9 green 9 7"
+    "9 blue 8 7"
+    "9 red 7 7"
+    "9 brown 9 6"
+    "10 white 9 9"
+    "10 yellow 9 8"
+    "10 green 8 8"
+    "10 blue 9 7"
+    "10 red 8 7"
+    "10 brown 7 7"
+  )
+  for row in "${expectations[@]}"; do
+    local lvl=$(echo "$row" | awk '{print $1}')
+    local belt=$(echo "$row" | awk '{print $2}')
+    local exp_a=$(echo "$row" | awk '{print $3}')
+    local exp_b=$(echo "$row" | awk '{print $4}')
+    local rid=$(post_json "/quiz/prepare" "{\"level\":$lvl,\"beltOrDegree\":\"$belt\",\"operation\":\"mul\"}" | jq -r '.quizRunId')
+    if [[ "$rid" == "null" || -z "$rid" ]]; then bad "L$lvl $belt prepare failed"; continue; fi
+    local start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
+    local got_a=$(echo "$start" | jq '[.questions[] | select(.source=="current")][0].params.a // -1')
+    local got_b=$(echo "$start" | jq '[.questions[] | select(.source=="current")][0].params.b // -1')
+    # Mul is commutative — accept either (a,b) or (b,a) ordering.
+    if [[ ( "$got_a" == "$exp_a" && "$got_b" == "$exp_b" ) || \
+          ( "$got_a" == "$exp_b" && "$got_b" == "$exp_a" ) ]]; then
+      ok "mul L$lvl $belt: ${exp_a}×${exp_b}"
+    else
+      bad "mul L$lvl $belt: expected ${exp_a}×${exp_b}, got ${got_a}×${got_b}"
+    fi
+    post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
+  done
+}
+
+# =============================================================================
+# TEST 23: Mul Distractor Quality (Bug 2 regression guard)
+# For mul questions with correct > 0, distractors should be product-based —
+# at most 1 of 3 should be in {c-2, c-1, c+1, c+2}, and at least 2 should be
+# expressible as a product of single-digit factors.
+# =============================================================================
+test_mul_distractor_quality() {
+  say "TEST 23: Mul Distractor Quality (product-based, not arithmetic neighbours)"
+
+  post_json "/admin/restore-user" "{\"pin\":\"$PIN\",\"operations\":{\"add\":19,\"sub\":11,\"mul\":10}}" "$ADMIN_PIN" >/dev/null
+
+  local sample_belts=("white" "yellow" "blue" "brown")
+  local sample_levels=(5 7 9 10)
+  local neighbour_violations=0
+  local product_violations=0
+  local checked=0
+
+  for lvl in "${sample_levels[@]}"; do
+    for belt in "${sample_belts[@]}"; do
+      local rid=$(post_json "/quiz/prepare" "{\"level\":$lvl,\"beltOrDegree\":\"$belt\",\"operation\":\"mul\"}" | jq -r '.quizRunId')
+      [[ "$rid" == "null" || -z "$rid" ]] && continue
+      local start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
+      local current_q=$(echo "$start" | jq -c '[.questions[] | select(.operation=="mul" and .source=="current" and .correctAnswer>0)][0]')
+      [[ "$current_q" == "null" || -z "$current_q" ]] && continue
+
+      local correct=$(echo "$current_q" | jq '.correctAnswer')
+      # Distractors = choices - {correct}.
+      local distractors=$(echo "$current_q" | jq -c "[.choices[] | select(. != $correct)]")
+      local neighbour_count=0
+      local product_count=0
+      for d in $(echo "$distractors" | jq '.[]'); do
+        # Neighbour check
+        if [[ "$d" -ge $((correct - 2)) && "$d" -le $((correct + 2)) && "$d" != "$correct" ]]; then
+          neighbour_count=$((neighbour_count + 1))
+        fi
+        # Product check: is d expressible as i*j for some i,j in 0..9?
+        local is_product=0
+        for ((i=0; i<=9; i++)); do
+          for ((j=0; j<=9; j++)); do
+            if [[ $((i * j)) -eq "$d" ]]; then is_product=1; break 2; fi
+          done
+        done
+        product_count=$((product_count + is_product))
+      done
+
+      checked=$((checked + 1))
+      if [[ $neighbour_count -gt 1 ]]; then
+        neighbour_violations=$((neighbour_violations + 1))
+      fi
+      if [[ $product_count -lt 2 ]]; then
+        product_violations=$((product_violations + 1))
+      fi
+      post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
+    done
+  done
+
+  if [[ $neighbour_violations -eq 0 ]]; then
+    ok "Distractors not clustered around correct (checked $checked questions, 0 violations)"
+  else
+    bad "Distractors clustered for $neighbour_violations of $checked questions"
+  fi
+  if [[ $product_violations -eq 0 ]]; then
+    ok "Distractors are product-based (checked $checked questions, 0 violations)"
+  else
+    bad "Distractors not product-based for $product_violations of $checked questions"
+  fi
+}
+
+# =============================================================================
 # MAIN
 # =============================================================================
 main() {
@@ -1037,6 +1151,8 @@ main() {
   test_div_not_unlocked_after_mul    # Test 19
   test_disabled_op_prepare_blocked   # Test 20
   test_operations_enabled_state      # Test 21
+  test_mul_belt_placement_l9_l10     # Test 22
+  test_mul_distractor_quality        # Test 23
 
   # ---------- Summary ----------
   printf "\n${BOLD}══════════════════════════════════════════════════════${NC}\n"
