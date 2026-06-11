@@ -59,6 +59,11 @@ public class GameConfig {
     private Instant updatedAt;
     private String updatedBy;
 
+    // ===== MIGRATION VERSION FLAGS =====
+    // Bumped when a backend migration that rewrites user data needs to run once.
+    // mulCatalogVersion: 2 == v1.7 canonical S&S catalog + hard-reset of mul/div progress.
+    private Integer mulCatalogVersion;
+
     // ===== CONSTANTS =====
     // BOOTSTRAP PIN — first-boot default only. Change immediately via PUT /api/config/admin-pin.
     // Persisted in the game_config Mongo document; this constant is only used when the document
@@ -327,6 +332,14 @@ public class GameConfig {
 
     public void setUpdatedBy(String updatedBy) {
         this.updatedBy = updatedBy;
+    }
+
+    public Integer getMulCatalogVersion() {
+        return mulCatalogVersion;
+    }
+
+    public void setMulCatalogVersion(Integer mulCatalogVersion) {
+        this.mulCatalogVersion = mulCatalogVersion;
     }
 
     public Map<String, OperationConfig> getOperations() {

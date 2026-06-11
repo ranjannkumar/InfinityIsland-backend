@@ -382,8 +382,8 @@ public class BonusModeHandler {
 
         List<GeneratedQuestion> questions = new ArrayList<>();
 
-        // L1-white digit-recognition special case (matches NormalModeHandler). Skip for div: a÷0 undefined.
-        if (lvl == 1 && Belt.WHITE.value().equals(belt) && !Operation.DIV.value().equalsIgnoreCase(op)) {
+        // L1-white digit-recognition is an addition-only construct (v1.7).
+        if (lvl == 1 && Belt.WHITE.value().equals(belt) && Operation.ADD.value().equalsIgnoreCase(op)) {
             int identityCount = Math.min(2, Math.max(1, batchSize / 5));
             for (int i = 0; i < identityCount; i++) {
                 questions.add(helper.buildQuestionObject(op, lvl, belt, 0, 0, "current",

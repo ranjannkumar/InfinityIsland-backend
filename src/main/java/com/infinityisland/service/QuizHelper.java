@@ -36,7 +36,7 @@ import static com.infinityisland.service.QuizUtils.*;
  * timer management, run lookups, and quiz summary construction.
  */
 @Service
-@DependsOn({"divisionCatalogSeeder", "multiplicationCatalogSeeder"})
+@DependsOn({"divisionCatalogSeeder", "multiplicationCatalogSeeder", "multiplicationProgressResetMigration"})
 public class QuizHelper {
 
     private static final Logger log = LoggerFactory.getLogger(QuizHelper.class);
@@ -208,9 +208,9 @@ public class QuizHelper {
         List<GeneratedQuestion> practiceObjects = new ArrayList<>();
         if (isBlack(belt)) {
             // No practice for black belt
-        } else if (lvl == 1 && Belt.WHITE.value().equals(belt) && !Operation.DIV.value().equalsIgnoreCase(op)) {
-            // (0,0) practice doesn't apply to division (a÷0 undefined). Fall through to the
-            // canonical-pair path below for div L1 white.
+        } else if (lvl == 1 && Belt.WHITE.value().equals(belt) && Operation.ADD.value().equalsIgnoreCase(op)) {
+            // L1-white (0, 0) practice is an addition-only construct (v1.7).
+            // Mul/sub/div L1 white fall through to the canonical-pair path.
             practiceObjects.add(buildQuestionObject(op, lvl, belt, 0, 0, "current", null));
         } else {
             int[] pair = getCanonicalPair(op, lvl, belt);

@@ -308,9 +308,9 @@ public class PretestModeHandler {
             }
         }
 
-        // Digit-recognition questions are an L1 add/sub/mul concept (a, 0). Division would
-        // produce a÷0 which is undefined, so skip for division.
-        int numDigitQuestions = (lvl == 1 && !Operation.DIV.value().equalsIgnoreCase(op)) ? 3 : 0;
+        // L1 digit-recognition (random digit, 0 pair) is an addition-only construct (v1.7).
+        // Mul/sub/div pretests at L1 pull from the canonical catalog facts only.
+        int numDigitQuestions = (lvl == 1 && Operation.ADD.value().equalsIgnoreCase(op)) ? 3 : 0;
         int questionsNeeded = totalQuestions - numDigitQuestions;
         int alreadyIncluded = questions.size();
         int remainingNeeded = questionsNeeded - alreadyIncluded;

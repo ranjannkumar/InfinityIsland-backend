@@ -250,10 +250,11 @@ public class NormalModeHandler {
 
         List<GeneratedQuestion> questions = new ArrayList<>();
 
-        // L1-white digit-introduction (0+0, digit recognition) doesn't apply to division
-        // because (a, 0) is undefined for div. Division L1 white falls through to the
-        // standard current-pair + previous-pool generator below.
-        if (lvl == 1 && Belt.WHITE.value().equals(belt) && !Operation.DIV.value().equalsIgnoreCase(op)) {
+        // L1-white digit-introduction (a + 0, digit-recognition style) is curriculum-correct
+        // only for addition. Subtraction and division previously fell through; multiplication
+        // also falls through as of v1.7 (the mul curriculum introduces 0×N at canonical L1
+        // belt slots via the seed, not via random digit picking).
+        if (lvl == 1 && Belt.WHITE.value().equals(belt) && Operation.ADD.value().equalsIgnoreCase(op)) {
             questions.add(helper.buildQuestionObject(op, lvl, belt, 0, 0, "current", buildQuestionText(op, 0, 0)));
             questions.add(helper.buildQuestionObject(op, lvl, belt, 0, 0, "current", buildQuestionText(op, 0, 0)));
 
@@ -369,8 +370,8 @@ public class NormalModeHandler {
             }
         }
 
-        // Skip digit questions for division (a÷0 undefined).
-        int numDigitQuestions = (lvl == 1 && !Operation.DIV.value().equalsIgnoreCase(op)) ? 3 : 0;
+        // L1 digit-recognition fillers are an addition-only construct (v1.7).
+        int numDigitQuestions = (lvl == 1 && Operation.ADD.value().equalsIgnoreCase(op)) ? 3 : 0;
         int questionsNeeded = totalQuestions - numDigitQuestions;
         int alreadyIncluded = questions.size();
         int remainingNeeded = questionsNeeded - alreadyIncluded;

@@ -1012,24 +1012,83 @@ test_operations_enabled_state() {
 # L10 belts must match the API doc Levels 6-10 example.
 # =============================================================================
 test_mul_belt_placement_l9_l10() {
-  say "TEST 22: Mul L9/L10 Belt Placements Match Canonical Seed"
+  say "TEST 22: Mul Belt Placements Match Canonical S&S (v1.7)"
 
   post_json "/admin/restore-user" "{\"pin\":\"$PIN\",\"operations\":{\"add\":19,\"sub\":11,\"mul\":10}}" "$ADMIN_PIN" >/dev/null
 
-  # Format: "level belt expected_a expected_b"
+  # Canonical S&S layout. Format: "level belt expected_a expected_b"
+  # Mul is commutative — assertion accepts either (a,b) or (b,a).
   local expectations=(
-    "9 white 8 8"
-    "9 yellow 9 8"
-    "9 green 9 7"
-    "9 blue 8 7"
-    "9 red 7 7"
-    "9 brown 9 6"
-    "10 white 9 9"
-    "10 yellow 9 8"
-    "10 green 8 8"
-    "10 blue 9 7"
-    "10 red 8 7"
-    "10 brown 7 7"
+    # L1: 0×N pairs
+    "1 white 0 0"
+    "1 yellow 0 1"
+    "1 green 0 2"
+    "1 blue 0 3"
+    "1 red 0 4"
+    "1 brown 0 5"
+    # L2: 0×N continues; brown transitions to 1×1
+    "2 white 0 5"
+    "2 yellow 0 6"
+    "2 green 0 7"
+    "2 blue 0 8"
+    "2 red 0 9"
+    "2 brown 1 1"
+    # L3: 1×N (yellow duplicates white per S&S)
+    "3 white 1 2"
+    "3 yellow 1 2"
+    "3 green 1 3"
+    "3 blue 1 4"
+    "3 red 1 5"
+    "3 brown 1 6"
+    # L4
+    "4 white 1 7"
+    "4 yellow 1 8"
+    "4 green 1 9"
+    "4 blue 2 2"
+    "4 red 2 3"
+    "4 brown 2 4"
+    # L5
+    "5 white 2 5"
+    "5 yellow 2 6"
+    "5 green 2 7"
+    "5 blue 2 8"
+    "5 red 2 9"
+    "5 brown 3 3"
+    # L6
+    "6 white 3 4"
+    "6 yellow 3 5"
+    "6 green 3 6"
+    "6 blue 3 7"
+    "6 red 3 8"
+    "6 brown 3 9"
+    # L7
+    "7 white 4 4"
+    "7 yellow 4 5"
+    "7 green 4 6"
+    "7 blue 4 7"
+    "7 red 4 8"
+    "7 brown 4 9"
+    # L8
+    "8 white 5 5"
+    "8 yellow 5 6"
+    "8 green 5 7"
+    "8 blue 5 8"
+    "8 red 5 9"
+    "8 brown 6 6"
+    # L9
+    "9 white 6 7"
+    "9 yellow 6 8"
+    "9 green 6 9"
+    "9 blue 7 7"
+    "9 red 7 8"
+    "9 brown 7 9"
+    # L10: each fact repeats in two belts
+    "10 white 8 8"
+    "10 yellow 8 9"
+    "10 green 9 9"
+    "10 blue 8 8"
+    "10 red 8 9"
+    "10 brown 9 9"
   )
   for row in "${expectations[@]}"; do
     local lvl=$(echo "$row" | awk '{print $1}')
@@ -1041,7 +1100,6 @@ test_mul_belt_placement_l9_l10() {
     local start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
     local got_a=$(echo "$start" | jq '[.questions[] | select(.source=="current")][0].params.a // -1')
     local got_b=$(echo "$start" | jq '[.questions[] | select(.source=="current")][0].params.b // -1')
-    # Mul is commutative — accept either (a,b) or (b,a) ordering.
     if [[ ( "$got_a" == "$exp_a" && "$got_b" == "$exp_b" ) || \
           ( "$got_a" == "$exp_b" && "$got_b" == "$exp_a" ) ]]; then
       ok "mul L$lvl $belt: ${exp_a}×${exp_b}"
@@ -1050,6 +1108,76 @@ test_mul_belt_placement_l9_l10() {
     fi
     post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
   done
+}
+
+# =============================================================================
+# TEST 24: No Out-Of-Range Operands at L1 (v1.7 regression guard)
+# Per S&S: L1 operands are constrained to {0..5}. No 6×0, 7×0, 8×0, 9×0 anywhere
+# at L1 (normal/black/pretest/bonus).
+# =============================================================================
+test_mul_l1_operand_range() {
+  say "TEST 24: Mul L1 Operands in {0..5} — no 6×0, 7×0, 8×0, 9×0"
+
+  post_json "/admin/restore-user" "{\"pin\":\"$PIN\",\"operations\":{\"add\":19,\"sub\":11,\"mul\":1}}" "$ADMIN_PIN" >/dev/null
+
+  local violations=0
+  for belt in white yellow green blue red brown; do
+    local rid=$(post_json "/quiz/prepare" "{\"level\":1,\"beltOrDegree\":\"$belt\",\"operation\":\"mul\"}" | jq -r '.quizRunId')
+    [[ "$rid" == "null" || -z "$rid" ]] && continue
+    local start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
+    local out_of_range=$(echo "$start" | jq '[.questions[] | select(.operation=="mul" and .source=="current") | select(.params.a > 5 or .params.b > 5)] | length')
+    if [[ "$out_of_range" -gt 0 ]]; then
+      bad "L1 $belt: $out_of_range out-of-range mul question(s)"
+      violations=$((violations + 1))
+    fi
+    post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
+  done
+
+  # Black belts at L1
+  for degree in 1 2 3 4 5 6 7; do
+    local rid=$(post_json "/quiz/prepare" "{\"level\":1,\"beltOrDegree\":\"black-$degree\",\"operation\":\"mul\"}" | jq -r '.quizRunId')
+    [[ "$rid" == "null" || -z "$rid" ]] && continue
+    local start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
+    local out_of_range=$(echo "$start" | jq '[.questions[] | select(.operation=="mul" and .source=="current") | select(.params.a > 5 or .params.b > 5)] | length')
+    if [[ "$out_of_range" -gt 0 ]]; then
+      bad "L1 black-$degree: $out_of_range out-of-range mul question(s)"
+      violations=$((violations + 1))
+    fi
+    post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
+  done
+
+  [[ $violations -eq 0 ]] && ok "No L1 mul questions have operand > 5 (sweep across all belts + degrees)"
+}
+
+# =============================================================================
+# TEST 25: Specific Tester Pain Points (v1.7 regression guard)
+# Cross-checks the exact placements the tester flagged in Testing MathNow (1).pdf.
+# =============================================================================
+test_mul_specific_placements() {
+  say "TEST 25: Specific S&S Placements (tester pain points)"
+
+  post_json "/admin/restore-user" "{\"pin\":\"$PIN\",\"operations\":{\"add\":19,\"sub\":11,\"mul\":3}}" "$ADMIN_PIN" >/dev/null
+
+  # L2 yellow should be (0, 6) — i.e. the new ×0 fact 0×6 / 6×0
+  local rid=$(post_json "/quiz/prepare" '{"level":2,"beltOrDegree":"yellow","operation":"mul"}' | jq -r '.quizRunId')
+  local start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
+  local has_06=$(echo "$start" | jq '[.questions[] | select(.operation=="mul" and (.params.a == 6 and .params.b == 0) or (.params.a == 0 and .params.b == 6))] | length')
+  [[ "$has_06" -gt 0 ]] && ok "L2 yellow contains 6×0 / 0×6" || bad "L2 yellow missing 6×0 / 0×6 (had: $(echo "$start" | jq -c '[.questions[] | select(.source=="current") | .question]'))"
+  post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
+
+  # L2 brown should be (1, 1) — the transition to ×1
+  rid=$(post_json "/quiz/prepare" '{"level":2,"beltOrDegree":"brown","operation":"mul"}' | jq -r '.quizRunId')
+  start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
+  local has_11=$(echo "$start" | jq '[.questions[] | select(.operation=="mul" and .params.a == 1 and .params.b == 1)] | length')
+  [[ "$has_11" -gt 0 ]] && ok "L2 brown contains 1×1" || bad "L2 brown missing 1×1"
+  post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
+
+  # L3 white should be (1, 2) or commutative (2, 1)
+  rid=$(post_json "/quiz/prepare" '{"level":3,"beltOrDegree":"white","operation":"mul"}' | jq -r '.quizRunId')
+  start=$(post_json "/quiz/start" "{\"quizRunId\":\"$rid\"}")
+  local has_12=$(echo "$start" | jq '[.questions[] | select(.operation=="mul" and ((.params.a == 1 and .params.b == 2) or (.params.a == 2 and .params.b == 1)))] | length')
+  [[ "$has_12" -gt 0 ]] && ok "L3 white contains 1×2 / 2×1" || bad "L3 white missing 1×2 / 2×1"
+  post_json "/quiz/complete" "{\"quizRunId\":\"$rid\"}" >/dev/null
 }
 
 # =============================================================================
@@ -1153,6 +1281,8 @@ main() {
   test_operations_enabled_state      # Test 21
   test_mul_belt_placement_l9_l10     # Test 22
   test_mul_distractor_quality        # Test 23
+  test_mul_l1_operand_range          # Test 24
+  test_mul_specific_placements       # Test 25
 
   # ---------- Summary ----------
   printf "\n${BOLD}══════════════════════════════════════════════════════${NC}\n"
