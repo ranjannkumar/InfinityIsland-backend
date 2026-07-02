@@ -166,7 +166,7 @@ public class RocketModeHandler {
                 .orElseThrow(() -> new IllegalArgumentException("Question not found"));
 
         // Inactivity check
-        if (responseMs > gameConfig.getInactivityThresholdMs()) {
+        if (gameConfig.isAnswerInactive(responseMs, gameConfig.getInactivityThresholdMs())) {
             return rocketQuizFailed(run, q, answer, responseMs, AttemptReason.INACTIVITY.value());
         }
 

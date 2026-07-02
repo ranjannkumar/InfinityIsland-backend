@@ -160,7 +160,7 @@ public class SurfModeHandler {
         GeneratedQuestion q = cachedQuestions.findById(questionId)
                 .orElseThrow(() -> new IllegalArgumentException("Question not found"));
 
-        if (responseMs > gameConfig.getInactivityThresholdMs()) {
+        if (gameConfig.isAnswerInactive(responseMs, gameConfig.getInactivityThresholdMs())) {
             return surfQuizFailed(run, q, answer, responseMs, AttemptReason.INACTIVITY.value());
         }
 

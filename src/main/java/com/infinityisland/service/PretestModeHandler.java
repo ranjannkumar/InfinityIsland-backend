@@ -142,7 +142,7 @@ public class PretestModeHandler {
     }
 
     public Object handlePretestModeAnswer(QuizRun run, String questionId, int answer, long responseMs) {
-        if (responseMs > gameConfig.getPretestInactivityThresholdMs()) {
+        if (gameConfig.isAnswerInactive(responseMs, gameConfig.getPretestInactivityThresholdMs())) {
             GeneratedQuestion currentQuestion = cachedQuestions.findById(questionId)
                     .orElseThrow(() -> new IllegalArgumentException("Question not found"));
             attemptService.recordAttemptAsync(run, currentQuestion, answer, false, responseMs, AttemptReason.INACTIVITY.value());

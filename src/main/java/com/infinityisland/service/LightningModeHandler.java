@@ -132,7 +132,7 @@ public class LightningModeHandler {
         GeneratedQuestion q = cachedQuestions.findById(questionId)
                 .orElseThrow(() -> new IllegalArgumentException("Question not found"));
 
-        if (responseMs > gameConfig.getInactivityThresholdMs()) {
+        if (gameConfig.isAnswerInactive(responseMs, gameConfig.getInactivityThresholdMs())) {
             attemptService.recordAttemptAsync(run, q, answer, false, responseMs, AttemptReason.INACTIVITY.value());
             run.setWrong(nvl(run.getWrong(), 0) + 1);
             helper.touch(run);

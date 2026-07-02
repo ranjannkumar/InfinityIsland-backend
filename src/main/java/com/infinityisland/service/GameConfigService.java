@@ -6,6 +6,7 @@ import com.infinityisland.repositories.GameConfigRepository;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -27,12 +28,15 @@ public class GameConfigService {
     private static final String CONFIG_ID = "default";
 
     private final GameConfigRepository configRepo;
+    private final long answerInactivityGraceMs;
 
     // In-memory cache for fast reads
     private final AtomicReference<GameConfig> cachedConfig = new AtomicReference<>();
 
-    public GameConfigService(GameConfigRepository configRepo) {
+    public GameConfigService(GameConfigRepository configRepo,
+                             @Value("${app.answer-inactivity-grace-ms:500}") long answerInactivityGraceMs) {
         this.configRepo = configRepo;
+        this.answerInactivityGraceMs = Math.max(0L, answerInactivityGraceMs);
     }
 
     @PostConstruct
@@ -53,6 +57,7 @@ public class GameConfigService {
         log.info(" - Pretest questions: {}", config.getPretestQuestionCount());
         log.info(" - Pretest time limit: {}ms", config.getPretestTimeLimitMs());
         log.info(" - Inactivity threshold: {}ms", config.getInactivityThresholdMs());
+        log.info(" - Answer inactivity grace: {}ms", answerInactivityGraceMs);
     }
 
     private String maskPin(String pin) {
@@ -276,6 +281,14 @@ public class GameConfigService {
 
     public long getPretestInactivityThresholdMs() {
         return cachedConfig.get().getPretestInactivityThresholdMs();
+    }
+
+    public long getAnswerInactivityGraceMs() {
+        return answerInactivityGraceMs;
+    }
+
+    public boolean isAnswerInactive(long responseMs, long inactivityThresholdMs) {
+        return responseMs > inactivityThresholdMs + answerInactivityGraceMs;
     }
 
     /**

@@ -180,7 +180,7 @@ public class BonusModeHandler {
                 .orElseThrow(() -> new IllegalArgumentException("Question not found"));
 
         // Inactivity → mirror Surf/Rocket: reset streak, show practice question (Q4).
-        if (responseMs > gameConfig.getInactivityThresholdMs()) {
+        if (gameConfig.isAnswerInactive(responseMs, gameConfig.getInactivityThresholdMs())) {
             return bonusFailed(run, q, answer, responseMs, AttemptReason.INACTIVITY.value());
         }
 

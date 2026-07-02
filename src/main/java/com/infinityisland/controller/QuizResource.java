@@ -105,7 +105,7 @@ public class QuizResource {
  @Path("/inactivity")
  public Object inactivity(QuizDtos.InactivityRequest body) {
   try {
-   return quiz.inactivity(body.quizRunId());
+   return quiz.inactivity(body.quizRunId(), body.questionId());
 
   } catch (Exception e) {
    log.error("[ERROR] Inactivity failed: {}", e.getMessage(), e);

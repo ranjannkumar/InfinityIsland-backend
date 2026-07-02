@@ -132,7 +132,7 @@ public class NormalModeHandler {
     }
 
     public Object handleNormalModeAnswer(QuizRun run, String questionId, int answer, long responseMs) {
-        if (responseMs > gameConfig.getInactivityThresholdMs()) {
+        if (gameConfig.isAnswerInactive(responseMs, gameConfig.getInactivityThresholdMs())) {
             GeneratedQuestion currentQuestion = cachedQuestions.findById(questionId)
                     .orElseThrow(() -> new IllegalArgumentException("Question not found"));
             attemptService.recordAttemptAsync(run, currentQuestion, answer, false, responseMs, AttemptReason.INACTIVITY.value());

@@ -217,24 +217,50 @@ public class QuizService {
 
     // ===== INACTIVITY =====
 
-    public Object inactivity(String quizRunId) {
+    public Object inactivity(String quizRunId, String questionId) {
         QuizRun run = helper.mustGetRun(quizRunId);
 
         if (!QuizStatus.RUNNING.value().equalsIgnoreCase(run.getStatus())) {
             return helper.buildLateInactivityResponse(run);
         }
 
+        String originalQId = questionId != null && !questionId.isBlank() ? questionId : currentQuestionId(run);
+        if (originalQId == null) throw new IllegalStateException("No current question for inactivity");
+
+        waitAnswerInactivityGrace();
+
+        run = helper.mustGetRun(quizRunId);
+        if (!QuizStatus.RUNNING.value().equalsIgnoreCase(run.getStatus())) {
+            return helper.buildLateInactivityResponse(run);
+        }
+
         String currentQId = currentQuestionId(run);
         if (currentQId == null) throw new IllegalStateException("No current question for inactivity");
+        if (!Objects.equals(originalQId, currentQId)) {
+            return helper.buildDuplicateResponse(run);
+        }
 
         GeneratedQuestion currentQuestion = cachedQuestions.findById(currentQId)
                 .orElseThrow(() -> new IllegalArgumentException("Current question not found"));
 
-        if (run.isSurfMode()) return surfHandler.handleSurfModeAnswer(run, currentQId, -1, gameConfig.getInactivityThresholdMs() + 1);
-        if (run.isRocketMode()) return rocketHandler.handleRocketModeAnswer(run, currentQId, -1, gameConfig.getInactivityThresholdMs() + 1);
-        if (run.isBonusMode()) return bonusHandler.handleBonusModeAnswer(run, currentQId, -1, gameConfig.getInactivityThresholdMs() + 1);
+        long forcedInactivityResponseMs = gameConfig.getInactivityThresholdMs()
+                + gameConfig.getAnswerInactivityGraceMs()
+                + 1;
+        if (run.isSurfMode()) return surfHandler.handleSurfModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
+        if (run.isRocketMode()) return rocketHandler.handleRocketModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
+        if (run.isBonusMode()) return bonusHandler.handleBonusModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
 
         return helper.handleNormalInactivity(run, currentQuestion);
+    }
+
+    private void waitAnswerInactivityGrace() {
+        long graceMs = gameConfig.getAnswerInactivityGraceMs();
+        if (graceMs <= 0) return;
+        try {
+            Thread.sleep(graceMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     // ===== COMPLETE =====
