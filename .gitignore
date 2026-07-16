@@ -2,6 +2,7 @@
 build/
 .gradle/
 *.class
+bin/
 
 # ===== IDE / OS =====
 .DS_Store

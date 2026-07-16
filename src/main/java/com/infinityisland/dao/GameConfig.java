@@ -98,16 +98,16 @@ public class GameConfig {
         this.lightningFastThresholdMs = 2_000L;
 
         // Surf mode (Game Mode 2)
-        this.surfQuestionsPerQuiz = 4;
+        this.surfQuestionsPerQuiz = 5;
         this.surfQuizzesRequired = 5;
 
         // Rocket mode (Game Mode 3)
-        this.rocketQuestionsPerQuiz = 4;
+        this.rocketQuestionsPerQuiz = 5;
         this.rocketQuizzesRequired = 5;
 
         // Bonus mode (Game Mode 4)
         this.bonusTargetCorrect = 20;
-        this.bonusVideoIntervalCorrect = 4;
+        this.bonusVideoIntervalCorrect = 5;
         this.bonusQuestionsPerBatch = 20;
 
         // Pretest mode
@@ -144,7 +144,7 @@ public class GameConfig {
         }
 
         // General
-        this.inactivityThresholdMs = 5_000L;
+        this.inactivityThresholdMs = 60_000L;
         this.pretestInactivityThresholdMs = 3_000L;
 
         this.createdAt = Instant.now();
