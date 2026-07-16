@@ -11,6 +11,7 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -29,8 +30,9 @@ import java.util.Optional;
  * the catalog and resets those users so they start the corrected progression
  * cleanly.
  *
- * Gate: {@code GameConfig.mulCatalogVersion}. Migration fires once when the value
- * is null or &lt; 2, then bumps it to 2.
+ * Gate: {@code GameConfig.mulCatalogVersion}. The destructive rewrite only runs
+ * when {@code app.run-mul-progress-reset-migration=true}; otherwise startup stamps
+ * the version marker and leaves user progress untouched.
  *
  * What it does for every user with any {@code progress.mul} data:
  *  - Resets {@code progress.mul} to a baseline {@code {L1: locked-pretest-not-taken}}.
@@ -53,6 +55,9 @@ public class MultiplicationProgressResetMigration {
     @Autowired
     private UserRepository userRepo;
 
+    @Value("${app.run-mul-progress-reset-migration:false}")
+    private boolean runDestructiveReset;
+
     @PostConstruct
     public void runIfNeeded() {
         Optional<GameConfig> opt = gameConfigRepo.findById("default");
@@ -64,6 +69,14 @@ public class MultiplicationProgressResetMigration {
         Integer currentVersion = cfg.getMulCatalogVersion();
         if (currentVersion != null && currentVersion >= TARGET_VERSION) {
             return; // Already applied.
+        }
+
+        if (!runDestructiveReset) {
+            cfg.setMulCatalogVersion(TARGET_VERSION);
+            gameConfigRepo.save(cfg);
+            log.info("[MIGRATION v1.7] Destructive mul/div reset is disabled; stamped mulCatalogVersion={} without changing user progress",
+                    TARGET_VERSION);
+            return;
         }
 
         log.info("[MIGRATION v1.7] Starting mul/div progress hard reset (current version={}, target={})",

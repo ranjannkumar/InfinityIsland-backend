@@ -34,6 +34,24 @@ public class DivisionCatalogSeeder {
             { {6,3}, {6,6}, {7,1}, {7,7}, {8,1}, {8,2} },
             // Level 4 (Brown intentionally duplicates Blue per curriculum sheet)
             { {8,4}, {8,8}, {9,1}, {9,3}, {9,9}, {9,3} },
+            // Level 5
+            { {10,2}, {10,5}, {12,2}, {12,3}, {12,4}, {12,6} },
+            // Level 6
+            { {14,2}, {14,7}, {15,3}, {15,5}, {16,2}, {16,4} },
+            // Level 7
+            { {16,8}, {18,2}, {18,3}, {18,6}, {18,9}, {21,3} },
+            // Level 8
+            { {21,7}, {24,3}, {24,4}, {24,6}, {24,8}, {25,5} },
+            // Level 9
+            { {27,3}, {27,9}, {28,4}, {28,7}, {30,5}, {30,6} },
+            // Level 10
+            { {32,4}, {32,8}, {36,6}, {40,5}, {40,8}, {42,6} },
+            // Level 11
+            { {42,7}, {45,5}, {45,9}, {48,6}, {48,8}, {54,6} },
+            // Level 12
+            { {54,9}, {56,7}, {56,8}, {63,7}, {63,9}, {64,8} },
+            // Level 13
+            { {72,8}, {72,9}, {81,9}, {72,8}, {72,9}, {81,9} },
     };
 
     @PostConstruct
@@ -77,6 +95,9 @@ public class DivisionCatalogSeeder {
     static void validateDivisionFact(int a, int b) {
         if (b == 0) {
             throw new IllegalStateException("Division fact rejected: divisor cannot be 0 (a=" + a + ")");
+        }
+        if (a % b != 0) {
+            throw new IllegalStateException("Division fact rejected: non-integer result (a=" + a + ", b=" + b + ")");
         }
     }
 }

@@ -125,6 +125,16 @@ public class GameConfigService {
                     }
                     log.info("[CONFIG] Reconciled: updated '{}' maxLevel from 0 to {}", op, defaultCfg.getMaxLevel());
                     updated = true;
+                } else if (Operation.DIV.value().equals(op)
+                        && existing.getMaxLevel() > 0
+                        && existing.getMaxLevel() < defaultCfg.getMaxLevel()) {
+                    int oldMaxLevel = existing.getMaxLevel();
+                    existing.setMaxLevel(defaultCfg.getMaxLevel());
+                    if (existing.getPrerequisite() == null && defaultCfg.getPrerequisite() != null) {
+                        existing.setPrerequisite(defaultCfg.getPrerequisite());
+                    }
+                    log.info("[CONFIG] Reconciled: raised '{}' maxLevel from {} to {}", op, oldMaxLevel, defaultCfg.getMaxLevel());
+                    updated = true;
                 }
             }
         }
@@ -336,6 +346,7 @@ public class GameConfigService {
             if (Operation.ADD.value().equalsIgnoreCase(operation)) return 19;
             if (Operation.SUB.value().equalsIgnoreCase(operation)) return 11;
             if (Operation.MUL.value().equalsIgnoreCase(operation)) return 10;
+            if (Operation.DIV.value().equalsIgnoreCase(operation)) return 13;
             return 0;
         }
         return opConfig.getMaxLevel();

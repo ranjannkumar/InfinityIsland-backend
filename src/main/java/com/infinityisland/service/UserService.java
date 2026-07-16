@@ -118,6 +118,10 @@ public class UserService {
                 u.setProgress(p);
                 updated = true;
             }
+            if (reconcileCompletedLevelUnlocks(p)) {
+                u.setProgress(p);
+                updated = true;
+            }
             if (updated) {
                 cachedUsers.save(u);
             }
@@ -179,6 +183,56 @@ public class UserService {
                         log.info("[PRUNE] Removed excess level {} from operation {}", key, op);
                     }
                 } catch (NumberFormatException ignored) {}
+            }
+        }
+        return updated;
+    }
+
+    /**
+     * If maxLevel expands after users have already completed the previous last level,
+     * create and unlock the next level so they can continue without admin repair.
+     */
+    @SuppressWarnings("unchecked")
+    private boolean reconcileCompletedLevelUnlocks(Map<String, Object> progress) {
+        boolean updated = false;
+        for (Map.Entry<String, GameConfig.OperationConfig> entry : gameConfig.getAllOperationConfigs().entrySet()) {
+            String op = entry.getKey().toLowerCase(Locale.ROOT);
+            int maxLevel = gameConfig.getMaxLevel(op);
+            if (maxLevel <= 1) continue;
+
+            Object opObj = progress.get(op);
+            if (!(opObj instanceof Map)) continue;
+            Map<String, Object> opNode = (Map<String, Object>) opObj;
+
+            for (int lvl = 1; lvl < maxLevel; lvl++) {
+                Object levelObj = opNode.get("L" + lvl);
+                if (!(levelObj instanceof Map)) continue;
+                Map<String, Object> levelNode = (Map<String, Object>) levelObj;
+                if (!Boolean.TRUE.equals(levelNode.get("completed"))) continue;
+
+                String nextKey = "L" + (lvl + 1);
+                Map<String, Object> nextLevelNode;
+                Object nextObj = opNode.get(nextKey);
+                if (nextObj instanceof Map) {
+                    nextLevelNode = (Map<String, Object>) nextObj;
+                } else {
+                    nextLevelNode = createLevelNode(lvl + 1, true);
+                    opNode.put(nextKey, nextLevelNode);
+                    updated = true;
+                }
+
+                if (!Boolean.TRUE.equals(nextLevelNode.get("unlocked"))) {
+                    nextLevelNode.put("unlocked", true);
+                    updated = true;
+                }
+                Object whiteObj = nextLevelNode.get(Belt.WHITE.value());
+                if (whiteObj instanceof Map) {
+                    Map<String, Object> white = (Map<String, Object>) whiteObj;
+                    if (!Boolean.TRUE.equals(white.get("unlocked"))) {
+                        white.put("unlocked", true);
+                        updated = true;
+                    }
+                }
             }
         }
         return updated;

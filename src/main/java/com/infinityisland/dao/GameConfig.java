@@ -137,7 +137,7 @@ public class GameConfig {
             operations.put(Operation.MUL.value(), mulConfig);
 
             OperationConfig divConfig = new OperationConfig();
-            divConfig.setMaxLevel(4);
+            divConfig.setMaxLevel(13);
             divConfig.setPrerequisite(Operation.MUL.value());
             divConfig.setUnlockedByDefault(false);
             operations.put(Operation.DIV.value(), divConfig);

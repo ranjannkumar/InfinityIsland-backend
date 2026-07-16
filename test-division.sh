@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# InfinityIsland — DIVISION MODULE TEST SUITE (4 levels)
+# InfinityIsland — DIVISION MODULE TEST SUITE (13 levels)
 # Tests: Operation Unlock (after mul L10), Quiz Flow, Belt Progression,
 #        No-Divide-By-Zero invariant, Non-Commutativity, Cross-Op Review,
 #        Pretest, Resume, Lightning/Surf/Rocket/Bonus game modes.
@@ -166,7 +166,7 @@ test_operations_endpoint() {
 
   local resp=$(get_json "/user/operations")
   jq -e '.operations.div' >/dev/null <<<"$resp" && ok "div operation listed" || bad "No div operation"
-  jq -e '.operations.div.maxLevel==4' >/dev/null <<<"$resp" && ok "div maxLevel=4" || bad "Wrong div maxLevel"
+  jq -e '.operations.div.maxLevel==13' >/dev/null <<<"$resp" && ok "div maxLevel=13" || bad "Wrong div maxLevel"
   jq -e '.operations.div.enabled==true' >/dev/null <<<"$resp" && ok "div enabled=true" || bad "div should be enabled"
   jq -e '.operations.div.prerequisite=="mul"' >/dev/null <<<"$resp" && ok "div prerequisite=mul" || bad "Wrong div prerequisite"
   jq -e '.operations.div.unlocked==false' >/dev/null <<<"$resp" && ok "div locked (mul not done)" || bad "div should be locked"
@@ -224,7 +224,7 @@ test_no_divide_by_zero() {
   say "TEST 5: No Generated Division Question Has b=0"
 
   local zero_found=0
-  for lvl in 1 2 3 4; do
+  for lvl in $(seq 1 13); do
     for belt in white yellow green blue red brown; do
       local prep=$(post_json "/quiz/prepare" "{\"level\":$lvl,\"beltOrDegree\":\"$belt\",\"operation\":\"div\"}")
       if jq -e '.pretestMode==true' >/dev/null <<<"$prep" 2>/dev/null; then
@@ -250,7 +250,7 @@ test_no_divide_by_zero() {
       complete_quiz_forcepass "$runId" "$start" >/dev/null
     done
   done
-  [[ $zero_found -eq 0 ]] && ok "No divide-by-zero across L1-L4 all colored belts"
+  [[ $zero_found -eq 0 ]] && ok "No divide-by-zero across L1-L13 all colored belts"
 }
 
 # =============================================================================
@@ -655,12 +655,12 @@ test_admin_restore_div() {
 
   reset_user
   local resp=$(post_json "/admin/restore-user" \
-    "{\"pin\":\"$PIN\",\"operations\":{\"add\":19,\"sub\":11,\"mul\":10,\"div\":4},\"grandTotalCorrect\":6000,\"currentStreak\":12}" \
+    "{\"pin\":\"$PIN\",\"operations\":{\"add\":19,\"sub\":11,\"mul\":10,\"div\":13},\"grandTotalCorrect\":6000,\"currentStreak\":12}" \
     "$ADMIN_PIN")
   jq -e '.success==true or .message' >/dev/null <<<"$resp" && ok "Restore returned success" || bad "Restore failed: $(echo "$resp" | head -c 200)"
 
   local prog=$(get_json "/user/progress")
-  jq -e '.progress.div.L4.completed==true' >/dev/null <<<"$prog" && ok "div.L4 completed via restore" || bad "div.L4 not completed"
+  jq -e '.progress.div.L13.completed==true' >/dev/null <<<"$prog" && ok "div.L13 completed via restore" || bad "div.L13 not completed"
 }
 
 # =============================================================================

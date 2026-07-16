@@ -45,3 +45,4 @@ application-local.properties
 # ===== Workspace-private (Conductor / Claude) =====
 .context/
 .claude/
+.elasticbeanstalk/
